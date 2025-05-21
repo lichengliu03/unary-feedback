@@ -1,0 +1,11 @@
+defaults:
+  - base
+    
+es_manager:
+  train:
+    env_configs:
+      tags: ["MetamathQA"]
+  val:
+    env_configs:
+      tags: ["MetamathQA"]
+

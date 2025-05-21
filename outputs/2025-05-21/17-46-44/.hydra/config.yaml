@@ -1,0 +1,410 @@
+data:
+  tokenizer: null
+  train_files: ~/data/rlhf/gsm8k/train.parquet
+  val_files: ~/data/rlhf/gsm8k/test.parquet
+  prompt_key: prompt
+  max_prompt_length: null
+  max_response_length: null
+  train_batch_size: null
+  val_batch_size: null
+  return_raw_input_ids: false
+  return_raw_chat: false
+  shuffle: true
+  filter_overlong_prompts: false
+  truncation: error
+  image_key: images
+actor_rollout_ref:
+  hybrid_engine: true
+  model:
+    path: ${model_path}
+    external_lib: null
+    override_config: {}
+    enable_gradient_checkpointing: true
+    use_remove_padding: false
+  actor:
+    strategy: fsdp
+    ppo_mini_batch_size: ${ppo_mini_batch_size}
+    ppo_micro_batch_size: null
+    ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu}
+    use_dynamic_bsz: false
+    ppo_max_token_len_per_gpu: 16384
+    grad_clip: 1.0
+    clip_ratio: 0.2
+    entropy_coeff: 0.001
+    use_kl_loss: false
+    use_torch_compile: true
+    kl_loss_coef: 0.001
+    kl_loss_type: kl
+    ppo_epochs: 1
+    shuffle: false
+    ulysses_sequence_parallel_size: 1
+    checkpoint:
+      contents:
+      - model
+      - hf_model
+      - optimizer
+      - extra
+    optim:
+      lr: 1.0e-06
+      lr_warmup_steps: -1
+      lr_warmup_steps_ratio: 0.0
+      min_lr_ratio: null
+      warmup_style: constant
+      total_training_steps: -1
+      betas:
+      - 0.9
+      - 0.999
+    fsdp_config:
+      wrap_policy:
+        min_num_params: 0
+      param_offload: false
+      optimizer_offload: false
+      fsdp_size: -1
+    micro_batch_size_per_gpu: ${micro_batch_size_per_gpu}
+    use_ref: false
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+    grpo_advantage_length_weight: ${grpo_advantage_length_weight}
+    lora:
+      enabled: ${lora.enabled}
+      rank: ${lora.rank}
+      alpha: ${lora.alpha}
+      target_modules: ${lora.target_modules}
+      local_temp_dir: ${lora.local_temp_dir}
+  ref:
+    fsdp_config:
+      param_offload: false
+      wrap_policy:
+        min_num_params: 0
+    log_prob_micro_batch_size: null
+    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu}
+    log_prob_use_dynamic_bsz: ${actor_rollout_ref.actor.use_dynamic_bsz}
+    log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
+    ulysses_sequence_parallel_size: ${actor_rollout_ref.actor.ulysses_sequence_parallel_size}
+  rollout:
+    name: vllm
+    temperature: 1.0
+    top_k: -1
+    top_p: 1
+    use_fire_sampling: false
+    prompt_length: 1
+    response_length: 400
+    dtype: bfloat16
+    gpu_memory_utilization: 0.95
+    ignore_eos: false
+    enforce_eager: true
+    free_cache_engine: true
+    load_format: dummy_dtensor
+    tensor_model_parallel_size: 1
+    max_num_batched_tokens: 4096
+    max_model_len: 3600
+    max_num_seqs: 1024
+    log_prob_micro_batch_size: null
+    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu}
+    log_prob_use_dynamic_bsz: ${actor_rollout_ref.actor.use_dynamic_bsz}
+    log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
+    disable_log_stats: true
+    enable_chunked_prefill: true
+    do_sample: true
+    'n': 1
+    val_kwargs:
+      top_k: -1
+      top_p: 1.0
+      temperature: 0
+      'n': 1
+      do_sample: false
+    lora:
+      enabled: ${lora.enabled}
+      rank: ${lora.rank}
+      alpha: ${lora.alpha}
+      target_modules: ${lora.target_modules}
+      local_temp_dir: ${lora.local_temp_dir}
+critic:
+  strategy: fsdp
+  optim:
+    lr: 1.0e-05
+    lr_warmup_steps_ratio: 0.0
+    min_lr_ratio: null
+    warmup_style: constant
+    total_training_steps: -1
+    betas:
+    - 0.9
+    - 0.999
+  model:
+    path: ${model_path}
+    tokenizer_path: ${actor_rollout_ref.model.path}
+    override_config: {}
+    external_lib: ${actor_rollout_ref.model.external_lib}
+    enable_gradient_checkpointing: true
+    use_remove_padding: false
+    fsdp_config:
+      param_offload: false
+      optimizer_offload: false
+      wrap_policy:
+        min_num_params: 0
+      fsdp_size: -1
+  ppo_mini_batch_size: ${ppo_mini_batch_size}
+  ppo_micro_batch_size: null
+  ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu}
+  forward_micro_batch_size: ${critic.ppo_micro_batch_size}
+  forward_micro_batch_size_per_gpu: ${critic.ppo_micro_batch_size_per_gpu}
+  use_dynamic_bsz: ${actor_rollout_ref.actor.use_dynamic_bsz}
+  ppo_max_token_len_per_gpu: 32768
+  forward_max_token_len_per_gpu: ${critic.ppo_max_token_len_per_gpu}
+  ulysses_sequence_parallel_size: 1
+  ppo_epochs: ${actor_rollout_ref.actor.ppo_epochs}
+  shuffle: ${actor_rollout_ref.actor.shuffle}
+  grad_clip: 1.0
+  cliprange_value: 0.5
+  checkpoint:
+    contents:
+    - model
+    - hf_model
+    - optimizer
+    - extra
+  lora:
+    enabled: ${lora.enabled}
+    rank: ${lora.rank}
+    alpha: ${lora.alpha}
+    target_modules: ${lora.target_modules}
+reward_model:
+  enable: false
+  strategy: fsdp
+  model:
+    input_tokenizer: ${actor_rollout_ref.model.path}
+    path: ~/models/FsfairX-LLaMA3-RM-v0.1
+    external_lib: ${actor_rollout_ref.model.external_lib}
+    use_remove_padding: false
+    fsdp_config:
+      wrap_policy:
+        min_num_params: 0
+      param_offload: false
+      fsdp_size: -1
+  micro_batch_size: null
+  micro_batch_size_per_gpu: null
+  max_length: null
+  ulysses_sequence_parallel_size: 1
+  use_dynamic_bsz: ${critic.use_dynamic_bsz}
+  forward_max_token_len_per_gpu: ${critic.forward_max_token_len_per_gpu}
+  reward_manager: naive
+custom_reward_function:
+  path: null
+  name: compute_score
+algorithm:
+  gamma: 1.0
+  lam: 1.0
+  adv_estimator: gae
+  kl_penalty: kl
+  kl_ctrl:
+    type: fixed
+    kl_coef: 0.001
+trainer:
+  balance_batch: true
+  total_epochs: 30
+  total_training_steps: 0
+  project_name: ragen_appendix
+  experiment_name: qwen_metamathqa_eval
+  logger:
+  - console
+  - wandb
+  val_generations_to_log_to_wandb: 0
+  nnodes: 1
+  n_gpus_per_node: 1
+  save_freq: -1
+  resume_mode: auto
+  resume_from_path: null
+  test_freq: 10
+  critic_warmup: 0
+  default_hdfs_dir: null
+  del_local_ckpt_after_load: false
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+  max_actor_ckpt_to_keep: null
+  max_critic_ckpt_to_keep: null
+  validation_steps: 1
+  val_before_train: true
+  generations_to_log_to_wandb:
+    train: 0
+    val: 20
+custom_envs:
+  SimpleSokoban:
+    env_type: sokoban
+    max_actions_per_traj: 10
+    env_instruction: You are solving the Sokoban puzzle. You are the player and you
+      need to push all boxes to targets. When you are right next to a box, you can
+      push it by moving in the same direction. You cannot push a box through a wall,
+      and you cannot pull a box. The answer should be a sequence of actions, like
+      <answer>Right || Right || Up</answer>
+    max_tokens: 100
+    env_config:
+      dim_x: 6
+      dim_y: 6
+      num_boxes: 1
+      max_steps: 100
+  LargerSokoban:
+    env_type: sokoban
+    max_actions_per_traj: 10
+    env_instruction: You are solving the Sokoban puzzle. You are the player and you
+      need to push all boxes to targets. When you are right next to a box, you can
+      push it by moving in the same direction. You cannot push a box through a wall,
+      and you cannot pull a box. The answer should be a sequence of actions, like
+      <answer>Right || Right || Up</answer>
+    max_tokens: 100
+    env_config:
+      dim_x: 8
+      dim_y: 8
+      num_boxes: 2
+      max_steps: 100
+      search_depth: 10
+  SokobanDifferentGridVocab:
+    env_type: sokoban
+    max_actions_per_traj: 10
+    env_instruction: You are solving the Sokoban puzzle. You are the player and you
+      need to push all boxes to targets. When you are right next to a box, you can
+      push it by moving in the same direction. You cannot push a box through a wall,
+      and you cannot pull a box. The answer should be a sequence of actions, like
+      <answer>Right || Right || Up</answer>
+    max_tokens: 100
+    env_config:
+      search_depth: 30
+      dim_x: 6
+      dim_y: 6
+      num_boxes: 1
+      max_steps: 100
+      grid_lookup:
+        0: W
+        1: .
+        2: G
+        3: C
+        4: B
+        5: A
+        6: '@'
+      grid_vocab:
+        W: wall
+        .: empty
+        G: target
+        C: box on target
+        B: box
+        A: player
+        '@': player on target
+  VisualSimpleSokoban:
+    env_type: sokoban
+    max_actions_per_traj: 10
+    env_instruction: You are solving the Sokoban puzzle. You are the player and you
+      need to push all boxes to targets. When you are right next to a box, you can
+      push it by moving in the same direction. You cannot push a box through a wall,
+      and you cannot pull a box. The answer should be a sequence of actions, like
+      <answer>Right || Right || Up</answer>
+    max_tokens: 100
+    env_config:
+      dim_x: 6
+      dim_y: 6
+      num_boxes: 1
+      max_steps: 100
+      render_mode: rgb_array
+  Countdown:
+    env_type: countdown
+    max_actions_per_traj: 1
+    env_instruction: 'You are solving the Countdown puzzle. You should use the num
+      list to create an equation that equals the target. Example answer format: <think>
+      To find an equation using [3, 5, 2] to get 4. Let''s check 2 + 5 = 7, 7 - 3
+      = 4. So the answer is 2 + 5 - 3 = 4. </think><answer>2 + 5 - 3</answer>'
+    max_tokens: 100
+    env_config: null
+  Bandit:
+    env_type: bandit
+    max_actions_per_traj: 1
+    env_instruction: ''
+    max_tokens: 100
+    env_config:
+      lo_arm_name: Phoenix
+      hi_arm_name: Dragon
+  BanditTest:
+    env_type: bandit
+    max_actions_per_traj: 1
+    env_instruction: ''
+    max_tokens: 100
+    env_config:
+      lo_arm_name: Trader
+      hi_arm_name: Librarian
+  FrozenLake:
+    env_type: frozen_lake
+    max_actions_per_traj: 10
+    env_instruction: 'You are solving the FrozenLake puzzle. Forbid the whole and
+      go to the target. You may move to the unintended direction due to the slippery
+      ice. Example answer format: <think>To forbid the hole and go to the target,
+      I should go left then go up.</think><answer>Left || Up</answer>'
+    max_tokens: 100
+    env_config: null
+  MetamathQA:
+    env_type: metamathqa
+    max_actions_per_traj: 10
+    env_instruction: 'You are solving Math problems. '
+    max_tokens: 100
+    env_config: null
+  WebShop:
+    env_type: webshop
+    max_actions_per_traj: 10
+    env_instruction: 'You are browsing an online shop. Based on the instruction, find
+      the product that close to the production description. You need to read the website
+      and decide what action to take next until buying a product. Available actions
+      depends on the page: in the search page you can search keywords, in the search
+      result page you can click an item url or click[next >] to navigate to next page,
+      in the product page you can click[description] or click[features] to see the
+      details, click[blue] or click[x-large] to choose size and colors, click[buy
+      now] when you decided to buy the product, click[back to search] to return to
+      search page. You should only choose action from the available actions list.  Example
+      process: I need a gingko light and 20x20 pillow cover that is hand painted.
+      First search[gingko light 20x20 pillow cover hand painted], answer format: <answer>search[blanket
+      with fleece throw]</answer>. Valid answer is search[<keywords>] or click[<clickable>].'
+    max_tokens: 200
+    env_config: null
+system:
+  CUDA_VISIBLE_DEVICES: '0'
+micro_batch_size_per_gpu: 1
+ppo_mini_batch_size: 8
+model_path: Qwen/Qwen2.5-32B
+enable_response_mask: true
+grpo_advantage_length_weight: false
+lora:
+  enabled: false
+  rank: 64
+  alpha: 64
+  target_modules: all-linear
+  local_temp_dir: lora_temp
+agent_proxy:
+  max_turn: 5
+  action_sep: '||'
+  max_actions_per_turn: 5
+  use_turn_scores: false
+  enable_think: true
+  reward_normalization:
+    grouping: state
+    method: identity
+val_agent_proxy:
+  max_turn: 5
+es_manager:
+  format_penalty: -0.1
+  train:
+    env_groups: 0
+    group_size: 0
+    env_configs:
+      tags:
+      - MetamathQA
+      n_groups:
+      - 0
+  val:
+    env_groups: 128
+    group_size: 1
+    env_configs:
+      tags:
+      - MetamathQA
+      n_groups:
+      - 128
+ctx_manager:
+  generation:
+    gen_config:
+      response_length: ${actor_rollout_ref.rollout.response_length}
+      temperature: ${actor_rollout_ref.rollout.temperature}
+      top_p: ${actor_rollout_ref.rollout.top_p}
+      top_k: ${actor_rollout_ref.rollout.top_k}
+      kwargs: null

@@ -1,0 +1,7 @@
+defaults:
+  - base
+ 
+trainer:
+  experiment_name: sokoban-main
+
+

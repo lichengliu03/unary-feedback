@@ -1,0 +1,11 @@
+beautifulsoup4
+cleantext
+flask
+html2text
+rank_bm25
+pyserini
+faiss-cpu
+thefuzz
+gdown
+spacy
+rich
