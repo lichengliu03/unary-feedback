@@ -88,7 +88,7 @@ custom_envs:
   MetamathQA:
     env_type: metamathqa
     max_actions_per_traj: 10
-    env_instruction: "You are solving Math problems. Please solve the problem step by step, showing your reasoning. Always conclude your answer with 'The answer is: [your final answer]'. For example, if the answer is 42, end with 'The answer is: 42'. Make sure to use this exact format so your answer can be correctly processed."
+    env_instruction: "You are solving Math problems. "
     max_tokens: 100
     env_config: null
   WebShop:

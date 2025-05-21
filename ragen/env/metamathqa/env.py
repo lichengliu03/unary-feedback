@@ -28,31 +28,10 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
         
         
     def _extract_answer(self, response):
-        # 尝试多种可能的答案格式
-        patterns = [
-            r"The answer is:?\s*(.*?)$",  # 原始格式
-            r"Answer:?\s*(.*?)$",         # 常见变体
-            r"答案是:?\s*(.*?)$",         # 中文格式
-            r"结果是:?\s*(.*?)$",         # 另一种中文格式
-            r"The final answer is:?\s*(.*?)$",  # 另一种常见格式
-            r"Therefore,? the answer is:?\s*(.*?)$",  # 推理后的结论
-        ]
-        
-        print(response)  # 调试用
-        
-        for pattern in patterns:
-            match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        
-        # 如果上述模式都不匹配，尝试查找最后一个数字或表达式作为答案
-        if re.search(r"[\d\.\-]+", response):
-            lines = response.strip().split('\n')
-            # 查找最后一个包含数字的行
-            for line in reversed(lines):
-                if re.search(r"[\d\.\-]+", line):
-                    return line.strip()
-        
+        match = re.search(r"The answer is: (.*?)$", response, re.DOTALL)
+        print(response)
+        if match:
+            return match.group(1).strip()
         return None
         
     def reset(self,seed=None):

@@ -22,70 +22,29 @@ register_resolvers()
 def get_masks_and_scores(input_ids: torch.Tensor, tokenizer: AutoTokenizer, all_scores: List[List[float]] = None, use_turn_scores: bool = False):
     """
     input_ids: shape (bsz, seq_len)
-    Get loss mask that only learns between assistant turns.
-    Modified to work with different models with different chat templates.
+    Get loss mask that only learns between <|im_start|>assistant and <|im_end|>. Currently only supports qwen.
+    NOTE: important! This assumes that the input_ids starts with system and then user & assistant in alternative ways
     """
-    # 尝试获取特殊token
-    try:
-        if tokenizer.name_or_path and "qwen" in tokenizer.name_or_path.lower():
-            # Qwen模型使用特定的特殊token
-            special_token = tokenizer.encode("<|im_start|>")[0]
-            reward_token = tokenizer.encode("<|im_end|>")[0]
-            
-            turn_starts = torch.where(input_ids == special_token, 1, 0)
-            turn_indicators = torch.cumsum(turn_starts, dim=-1)
-            response_mask = (turn_indicators % 2 == 1) & (turn_indicators > 1) # only learns all assistant turns
-            loss_mask = (turn_indicators > 1) # learns everything after system prompt
-        else:
-            # 通用模型使用"Assistant: "来识别回复部分
-            assistant_text = "Assistant: "
-            assistant_tokens = tokenizer.encode(assistant_text, add_special_tokens=False)
-            
-            # 在输入中查找"Assistant: "的位置
-            response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-            for i in range(input_ids.shape[0]):  # 遍历batch
-                for j in range(input_ids.shape[1] - len(assistant_tokens)):  # 遍历序列长度
-                    if torch.all(input_ids[i, j:j+len(assistant_tokens)] == torch.tensor(assistant_tokens)):
-                        # 找到"Assistant: "后的所有token都是回复
-                        response_mask[i, j+len(assistant_tokens):] = True
-                        break
-            
-            # 所有非填充token都参与loss计算
-            loss_mask = (input_ids != tokenizer.pad_token_id) if tokenizer.pad_token_id is not None else torch.ones_like(input_ids, dtype=torch.bool)
-            
-            # 对于reward token，我们使用序列的最后一个非填充token
-            reward_token = None  # 不使用特定token，而是使用序列末尾
-    except:
-        # 如果上面的方法失败，使用一个通用的方法：最后1/3的token作为response
-        print("使用通用mask方法")
-        seq_len = input_ids.shape[1]
-        response_start = seq_len // 3 * 2  # 最后1/3的token
-        response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-        response_mask[:, response_start:] = True
-        
-        # 所有非填充token都参与loss计算
-        loss_mask = (input_ids != tokenizer.pad_token_id) if tokenizer.pad_token_id is not None else torch.ones_like(input_ids, dtype=torch.bool)
-        reward_token = None
+    special_token = tokenizer.encode("<|im_start|>")[0]
+    turn_starts = torch.where(input_ids == special_token, 1, 0)
+    turn_indicators = torch.cumsum(turn_starts, dim=-1)
+    response_mask = (turn_indicators % 2 == 1) & (turn_indicators > 1) # only learns all assistant turns
+    loss_mask = (turn_indicators > 1) # learns everything after system prompt
+    # loss_mask = response_mask
 
+    reward_token = tokenizer.encode("<|im_end|>")[0]
     score_tensor = torch.zeros_like(input_ids, dtype=torch.float32)
     if use_turn_scores:
-        if reward_token is not None:
-            for idx, scores in enumerate(list(zip(*all_scores))):
-                scores = torch.tensor(scores, dtype=torch.float32)
-                turn_indicator = idx * 2 + 3  # 0: pad. 1: system. 2+2n: user. 3+2n: assistant
-                reward_position = (input_ids == reward_token) & (turn_indicators == turn_indicator)
-                score_tensor[reward_position] = scores
-        else:
-            # 将分数应用到每个回复的最后一个token
-            print("警告：use_turn_scores=True但没有特定的reward token，可能会影响结果")
-            scores = [sum(i) for i in all_scores]
-            score_tensor[:, -1] = torch.tensor(scores, dtype=torch.float32)
+        for idx, scores in enumerate(list(zip(*all_scores))):
+            scores = torch.tensor(scores, dtype=torch.float32)
+            turn_indicator = idx * 2 + 3 # 0: pad. 1: system. 2+2n: user. 3+2n: assistant
+            reward_position = (input_ids == reward_token) & (turn_indicators == turn_indicator)
+            score_tensor[reward_position] = scores
     else:
         scores = [sum(i) for i in all_scores]
         score_tensor[:, -1] = torch.tensor(scores, dtype=torch.float32)
-    
-    loss_mask = loss_mask[:, :-1]  # remove the last token
-    score_tensor = score_tensor[:, 1:]  # remove the first token
+    loss_mask = loss_mask[:, :-1] # remove the last token
+    score_tensor = score_tensor[:, 1:] # remove the first token
     response_mask = response_mask[:, :-1]
 
     return loss_mask, score_tensor, response_mask
@@ -110,19 +69,6 @@ class ContextManager:
         """
         self.config = config
         self.tokenizer = tokenizer
-        
-        # 检查tokenizer是否有聊天模板，如果没有则设置一个默认模板
-        if not hasattr(self.tokenizer, 'chat_template') or self.tokenizer.chat_template is None:
-            # 设置一个通用的聊天模板，适用于大多数模型
-            self.tokenizer.chat_template = """{% for message in messages %}
-{% if message['role'] == 'system' %}{{ message['content'] }}
-{% elif message['role'] == 'user' %}User: {{ message['content'] }}
-{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}
-{% endif %}
-{% endfor %}
-{% if add_generation_prompt %}Assistant: {% endif %}"""
-            print("已为tokenizer设置默认聊天模板")
-            
         self.processor = processor
         self.action_sep = self.config.agent_proxy.action_sep
         self.special_token_list = ["<think>", "</think>", "<answer>", "</answer>", "<|im_start|>", "<|im_end|>"]
@@ -298,7 +244,7 @@ class ContextManager:
             llm_input_texts.append(text)
             messages_list.append(messages)
 
-        inputs = self.tokenizer(llm_input_texts, return_tensors="pt", padding=True, padding_side="left", truncation=True, max_length=4000) # truncate to avoid exceeding model context limit
+        inputs = self.tokenizer(llm_input_texts, return_tensors="pt", padding=True, padding_side="left", truncation=False) # do not truncate here. Process later at TODO
         input_ids, attention_mask = inputs.input_ids, inputs.attention_mask
         position_ids = attention_mask.cumsum(dim=-1)
         if prepare_for_update:
