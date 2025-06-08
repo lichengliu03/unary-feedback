@@ -147,7 +147,7 @@ def add_dependency(config):
     return config
 
 
-@hydra.main(version_base=None, config_path="config", config_name="evaluate_qwen_32b_metamathqa")
+@hydra.main(version_base=None, config_path="config", config_name="base")
 def main(config):
     config = add_dependency(config)
     print(f"config: {config}")
