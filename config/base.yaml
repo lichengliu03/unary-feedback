@@ -3,11 +3,11 @@ defaults:
   - envs
 
 system:
-  CUDA_VISIBLE_DEVICES: "0"
+  CUDA_VISIBLE_DEVICES: "0, 1"
 
-micro_batch_size_per_gpu: 1
-ppo_mini_batch_size: 8
-model_path: lkevinzc/Llama-3.2-3B-NuminaQA
+micro_batch_size_per_gpu: 2
+ppo_mini_batch_size: 16
+model_path: Qwen/Qwen2.5-3B-Instruct
 enable_response_mask: True
 grpo_advantage_length_weight: False # if you do not enable this and critic/advantage_estimator is GRPO, and the critic/advantages/mean is too low, then you can try enabling this to encourage reasoning and forbid collapse
 
@@ -45,8 +45,8 @@ actor_rollout_ref:
     log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
   rollout:
     log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
-    tensor_model_parallel_size: 1
-    max_model_len: 4096
+    tensor_model_parallel_size: 2
+    max_model_len: 8192
     prompt_length: 1 # useless. Just put it here
     response_length: 400 # single-turn response length
     gpu_memory_utilization: 0.5
@@ -99,7 +99,7 @@ trainer:
   total_training_steps: 200
   validation_steps: 1 # validation instances = validation_steps * val_env_groups * group_size
   val_before_train: True
-  n_gpus_per_node: 1
+  n_gpus_per_node: 2
   test_freq: 10
   generations_to_log_to_wandb: 
     train: 128 # TODO: will be implemented
