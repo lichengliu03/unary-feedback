@@ -153,7 +153,7 @@ Check `val/generations` in wandb
 We compare our multi-turn UFO model against a strong single-turn PPO baseline. For a fair comparison, the baseline is evaluated on 5 independent samples (Pass@5), while our model uses 5 sequential attempts with feedback (Succ@5). Success is recorded if any of the 5 responses is correct. We also analyze the impact of varying the maximum number of interaction turns at training.
 
 <p align="center">
-<img src="public/compare_baseline.png" width="45%" alt="UFO Performance Comparison" />
+<img src="public/compare_baseline.png" width="46.2%" alt="UFO Performance Comparison" />
 <img src="public/multi-turn_training.png" width="45%" alt="Multi-turn Training Process" />
 </p>
 <p align="center" style="font-size: 14px; color: #666;">
