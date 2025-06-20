@@ -146,30 +146,46 @@ python sft/utils/merge_lora.py \
 Check `val/generations` in wandb
 
 
-## Performance
+## Key Results
 
-We evaluate RAGEN across multiple environments. Below are results Qwen-2.5-0.5B-Instruct on Sokoban, Frozenlake, and Bandit. 
-- No KL loss or KL penalty was applied during training
-- We selectively retained only the top 25% of trajectories that successfully completed their respective tasks
+### Multi-Turn Reasoning Performance
 
-<p align="center" style="display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 20px; max-width: 500px; margin: 0 auto;">
-    <img src="public/exp1.png" width="250px" alt="Bandit" />
-    <img src="public/exp2.png" width="250px"  alt="Simple Sokoban" />
-    <img src="public/exp3.png" width="250px"  alt="Frozen lake" />
+We compare our multi-turn UFO model against a strong single-turn PPO baseline. For a fair comparison, the baseline is evaluated on 5 independent samples (Pass@5), while our model uses 5 sequential attempts with feedback (Succ@5). Success is recorded if any of the 5 responses is correct. We also analyze the impact of varying the maximum number of interaction turns at training.
+
+<p align="center">
+<img src="public/compare_baseline.png" width="45%" alt="UFO Performance Comparison" />
+<img src="public/multi-turn_training.png" width="45%" alt="Multi-turn Training Process" />
+</p>
+<p align="center" style="font-size: 14px; color: #666;">
+Left: Multi-turn (5-turn) RL significantly outperforms single-turn baseline. Right: Performance comparison with different training turns (1, 5, and 10).
 </p>
 
-We demonstrate RAGEN's robust generalization ability by training on simple Sokoban environments (6×6 with 1 box) and successfully evaluating performance on:
-- Larger Sokoban environments (8×8 with 2 boxes)
-- Simple Sokoban with alternative grid vocabulary representations
-- FrozenLake environments
+**Key Findings:**
+- **+14% success rate** over single-turn PPO baseline
+- Benefits generalize to both multi-turn and single-turn inference
+- Best results with 5-turn training; more turns yield diminishing returns
 
-<p align="center" style="display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 20px; max-width: 500px; margin: 0 auto;">
-    <img src="public/exp4.png" width="250px" alt="Larger Sokoban" />
-    <img src="public/exp5.png" width="250px"  alt="Sokoban with Different Grid Vocabulary" />
-    <img src="public/exp6.png" width="250px"  alt="Frozen lake" />
+### Effectiveness of Unary Feedback
+
+To further investigate the role of unary feedback, we compare model performance under different feedback availability conditions. In scenario (a), unary feedback is provided during both training and validation phases, while in scenario (b), unary feedback is available only during training but not at validation. The results show that access to unary feedback during both phases substantially improves validation success rate. In contrast, providing unary feedback solely during training does not yield improvements, indicating that the benefit of unary feedback is contingent on its availability at inference time.
+
+<p align="center"><img src="public/feedback_comparisons_side_by_side.png" width="80%" alt="Effectiveness of Unary Feedback" /></p>
+<p align="center" style="font-size: 14px; color: #666;">
+Success rate comparison under different unary feedback settings: (a) feedback in both training and validation; (b) feedback only in training.
 </p>
 
-Key observations:
-- By using no KL and filtering out failed trajectories, we can achieve better and stable performance
-- Generalization results highlight RAGEN's capacity to transfer learned policies across varying environment complexities, representations, and domains.
+**Key Insights:**
+- Feedback in both training and validation is crucial for improvement
+- Feedback only in training phase does **not** help at inference
+
+### Reward Design Impact
+
+**Exponential Reward Decay:**
+- Decreases the average number of actions required to solve problems by ~10%
+- Encourages faster and more efficient problem solving
+
+**Answer Diversity:**
+- Non-repetitive answer ratio increases from 79.7% to 92.8%
+- Multi-turn RL with UFO encourages answer diversity and strengthens robustness
+
 

@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Let's Try Again: Eliciting Multi-Turn Reasoning in Language Models via Simplistic Feedback</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #5E35B1;
+            --primary-light: #7E57C2;
+            --primary-dark: #4527A0;
+            --secondary: #26A69A;
+            --dark: #263238;
+            --light: #ECEFF1;
+            --gray: #90A4AE;
+            --light-gray: #CFD8DC;
+            --white: #FFFFFF;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background-color: var(--white);
+            -webkit-font-smoothing: antialiased;
+            scroll-behavior: smooth;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            line-height: 1.2;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            margin-top: 2.5rem;
+        }
+
+        h3 {
+            font-size: 1.4rem;
+            margin-top: 1.5rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--dark);
+        }
+
+        a {
+            color: var(--primary);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        a:hover {
+            color: var(--primary-dark);
+            text-decoration: underline;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Header Section */
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--white);
+            padding: 4rem 0 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxkZWZzPjxwYXR0ZXJuIGlkPSJwYXR0ZXJuIiB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiIHBhdHRlcm5UcmFuc2Zvcm09InJvdGF0ZSg0NSkiPjxyZWN0IHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNwYXR0ZXJuKSIvPjwvc3ZnPg==');
+            opacity: 0.3;
+        }
+
+        .superscript {
+            position: relative;
+            top: -0.5em;
+            font-size: 0.75em;
+            margin-left: 1px;
+        }
+
+        .asterisk {
+            position: relative;
+            top: -0.5em;
+            font-size: 0.75em;
+            margin-left: 1px;
+        }
+
+        .title {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .title h1 {
+            color: var(--white);
+            font-size: 2.8rem;
+            margin-bottom: 1.5rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* Author Section */
+        .authors {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .author {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(5px);
+            border-radius: var(--radius-md);
+            padding: 0.5rem 1rem;
+            transition: var(--transition);
+        }
+
+        .author:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .author a {
+            color: var(--white);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .affiliations {
+            text-align: center;
+            margin: 1rem 0 2rem;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .conference {
+            text-align: center;
+            margin: 1.5rem 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .conference a {
+            color: var(--white);
+            font-weight: 600;
+            font-size: 1.2rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin: 2rem 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--white);
+            color: var(--primary);
+            padding: 0.8rem 1.5rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            transition: var(--transition);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            text-decoration: none;
+        }
+
+        /* Content Sections */
+        .section {
+            padding: 4rem 0;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .section-title h2 {
+            position: relative;
+            display: inline-block;
+        }
+
+        .section-title h2::after {
+            content: "";
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 3px;
+            background: var(--primary);
+            border-radius: 3px;
+        }
+
+        .abstract {
+            background: var(--light);
+            padding: 2rem;
+            border-radius: var(--radius-md);
+            margin: 2rem 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .abstract p {
+            margin-bottom: 1rem;
+            text-align: justify;
+        }
+
+        .highlight {
+            background: rgba(94, 53, 177, 0.1);
+            padding: 0.2rem 0.4rem;
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+        }
+
+        /* Video Container */
+        .video-container {
+            margin: 3rem auto;
+            max-width: 800px;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+        }
+
+        .video-container video {
+            width: 100%;
+            display: block;
+        }
+
+        .video-caption {
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-top: 0.5rem;
+        }
+
+        /* Figures and Tables */
+        .figure {
+            margin: 2rem auto;
+            text-align: center;
+            max-width: 800px;
+        }
+
+        .figure.large {
+            max-width: 100%;
+        }
+
+        .figure.medium {
+            max-width: 600px;
+        }
+
+        .figure.small {
+            max-width: 400px;
+        }
+
+        .figure img {
+            max-width: 50%;
+            height: auto;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+        }
+
+        .figure.medium img {
+            max-width: 180%;
+            margin-left: -40%;
+            margin-right: -40%;
+        }
+
+        .figure.small img {
+            max-width: 50%;
+        }
+
+        .figure-caption {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: var(--gray);
+            text-align: justify;
+            max-width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin: 2rem 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        th {
+            background-color: var(--primary);
+            color: var(--white);
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--light);
+        }
+
+        /* Infographic Cards */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+            border-top: 4px solid var(--primary);
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .card-icon {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(94, 53, 177, 0.1);
+            border-radius: 50%;
+            color: var(--primary);
+            font-size: 1.5rem;
+        }
+
+        .card-title {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .card-subtitle {
+            color: var(--gray);
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .card-content p {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-content p::before {
+            content: "•";
+            color: var(--primary);
+            margin-right: 0.5rem;
+        }
+
+        /* Dataset Viewer */
+        .dataset-viewer {
+            background: var(--white);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            padding: 2rem;
+            margin: 3rem auto;
+            max-width: 900px;
+        }
+
+        .dataset-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .dataset-label {
+            background: var(--primary);
+            color: var(--white);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .dataset-nav {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .nav-button {
+            background: var(--primary);
+            color: var(--white);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-button:disabled {
+            background: var(--light-gray);
+            cursor: not-allowed;
+        }
+
+        .nav-button:hover:not(:disabled) {
+            background: var(--primary-dark);
+        }
+
+        .dataset-video {
+            width: 100%;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            background: var(--dark);
+            position: relative;
+        }
+
+        .dataset-video video {
+            width: 100%;
+            display: block;
+        }
+
+        .question-section {
+            background: var(--light);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .question-title {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 1rem;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .option input {
+            accent-color: var(--primary);
+        }
+
+        .option label {
+            font-weight: 500;
+        }
+
+        .reveal-button {
+            background: var(--primary);
+            color: var(--white);
+            border: none;
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 1.5rem auto;
+            width: fit-content;
+        }
+
+        .reveal-button:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .answer-container {
+            background: var(--light);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            border-left: 4px solid var(--primary);
+            display: none;
+        }
+
+        .keyframe-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .keyframe-title {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 1rem;
+        }
+
+        .keyframe-slider {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            gap: 1rem;
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+            scrollbar-width: none;
+        }
+
+        .keyframe-slider::-webkit-scrollbar {
+            display: none;
+        }
+
+        .keyframe-slide {
+            scroll-snap-align: start;
+            min-width: 100%;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+
+        .keyframe-slide img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .keyframe-nav {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .keyframe-dots {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .keyframe-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--light-gray);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .keyframe-dot.active {
+            background: var(--primary);
+        }
+
+        .answer-section {
+            margin-top: 1.5rem;
+        }
+
+        .answer-title {
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 0.5rem;
+        }
+
+        .ground-truth, .mllm-answer {
+            background: var(--white);
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            margin-bottom: 1rem;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--dark);
+            color: var(--white);
+            padding: 3rem 0;
+            text-align: center;
+        }
+
+        .footer a {
+            color: var(--white);
+            text-decoration: underline;
+        }
+
+        .footer p {
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            .title h1 {
+                font-size: 2rem;
+            }
+            
+            .section {
+                padding: 3rem 0;
+            }
+            
+            .cards {
+                grid-template-columns: 1fr;
+            }
+            
+            .dataset-viewer {
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 0 1rem;
+            }
+            
+            .title h1 {
+                font-size: 1.8rem;
+            }
+            
+            .authors {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .button {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header Section -->
+    <header class="header">
+        <div class="container">
+            <div class="title">
+                <h1>Let's Try Again: Eliciting Multi-Turn Reasoning in Language Models via Simplistic Feedback</h1>
+                
+                <div class="authors">
+                    <div class="author"><a href="https://www.linkedin.com/in/licheng-liu/" target="_blank">Licheng Liu<span class="superscript">1</span><span class="asterisk">*</span></a></div>
+                    <div class="author"><a href="https://zihanwang314.github.io/" target="_blank">Zihan Wang<span class="superscript">2</span><span class="asterisk">*</span></a></div>
+                    <div class="author"><a href="https://scholar.google.com/citations?user=WR875gYAAAAJ&hl=en" target="_blank">Linjie Li<span class="superscript">3</span></a></div>
+                    <div class="author"><a href="https://chenwei-1999.github.io/" target="_blank">Chenwei Xu<span class="superscript">2</span></a></div>
+                    <div class="author"><a href="https://2prime.github.io/" target="_blank">Yiping Lu<span class="superscript">2</span></a></div>
+                    <div class="author"><a href="https://scholar.google.com/citations?user=XaFT1o4AAAAJ&hl=zh-CN" target="_blank">Han Liu<span class="superscript">2</span></a></div>
+                    <div class="author"><a href="https://research.ibm.com/people/avi-sil" target="_blank">Avirup Sil<span class="superscript">4</span></a></div>
+                    <div class="author"><a href="https://limanling.github.io/" target="_blank">Manling Li<span class="superscript">2</span></a></div>
+                </div>
+                
+                <div class="affiliations">
+                    <span class="superscript">1</span>Imperial College London &nbsp; | &nbsp;
+                    <span class="superscript">2</span>Northwestern University &nbsp; | &nbsp;
+                    <span class="superscript">3</span>University of Washington &nbsp; | &nbsp;
+                    <span class="superscript">4</span>IBM Research AI
+                </div>
+                
+
+                
+                <div class="buttons">
+                    <a href="#" target="_blank" class="button">arXiv</a>
+                    <a href="assets/pdf/UFO_paper.pdf" target="_blank" class="button">PDF</a>
+                    <a href="#" target="_blank" class="button">Code</a>
+                    <a href="#" target="_blank" class="button">Data</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Abstract Section -->
+    <section class="section">
+        <div class="container">
+            <div class="abstract">
+                <h3>Abstract</h3>
+                <p>
+                    Large language models often struggle with multi-turn reasoning, especially when trained with single-turn reinforcement learning paradigms. We identify that the lack of effective feedback in multi-turn scenarios leads to repetitive and suboptimal responses. To address this, we propose Unary Feedback as Observation (UFO), a simple yet powerful method that leverages minimal user feedback, such as “Let’s try again”, to guide models during iterative problem solving. Our approach can be seamlessly integrated into existing RL frameworks and significantly improves multi-turn reasoning accuracy by 14%, while maintaining single-turn performance. UFO demonstrates that even the simplest feedback can unlock more robust and interactive reasoning abilities in language models.
+                </p>
+            </div>
+
+            <!-- Unique Answer Ratio Comparison Figure -->
+            <div class="figure medium">
+                <img src="assets/img/unique_answer_ratio_comparison.png" alt="Unique Answer Ratio Comparison">
+                <div class="figure-caption">
+                    <strong>Figure 1.</strong> Comparison of effective (unique) answer ratio (%) before and after RL training. Across single-turn RL methods, the unique answer ratio consistently drops after training across multiple model scales.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Overview Section -->
+    <section class="section">
+        <div class="container">
+            <div class="section-title">
+                <h2>Method Overview</h2>
+            </div>
+            
+            <p>
+                We address the challenge that single-turn reinforcement learning (RL) often fails to endow language models with multi-turn reasoning abilities, leading to repetitive and unadaptive responses. Our approach, <strong>Unary Feedback as Observation (UFO)</strong>, reformulates multi-turn problem solving as a Markov Decision Process (MDP) using only static single-turn datasets and minimal feedback.
+            </p>
+            <p>
+                In UFO, the model interacts over multiple turns, receiving only negative feedback (e.g., “Try Again”) after incorrect answers. The observation at each step concatenates the original question, all previous attempts, and their feedback, requiring the model to revise its reasoning based solely on a history of failed attempts. This design enables multi-turn training without the need for dense supervision or tool-augmented environments.
+            </p>
+            <p>
+                We optimize the model using Proximal Policy Optimization (PPO), with two key reward shaping strategies: <em>reward decay</em> (to encourage early success) and a <em>repetition penalty</em> (to promote answer diversity). This framework allows the model to develop revision-aware, context-sensitive reasoning strategies, unlocking robust multi-turn capabilities from static datasets and minimal supervision.
+                </p>
+            
+            <div class="figure">
+                <img src="assets/img/flow_chart.png" alt="UFO Multi-turn Training Framework" style="max-width:120%; margin-left:-10%; margin-right:-10%;">
+                <div class="figure-caption">
+                    <strong>Figure 2.</strong> Multi-turn training framework of UFO showing how models learn from unary feedback during iterative problem-solving processes.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Experiments Section -->
+    <section class="section">
+        <div class="container">
+            <div class="section-title">
+                <h2>Key Results</h2>
+            </div>
+            
+            <h3>Multi-Turn Reasoning Performance</h3>
+            <p>
+                We compare our multi-turn UFO model against a strong single-turn PPO baseline. For a fair comparison, the baseline is evaluated on 5 independent samples (Pass@5), while our model uses 5 sequential attempts with feedback (Succ@5). Success is recorded if any of the 5 responses is correct. We also analyze the impact of varying the maximum number of interaction turns at training.
+            </p>
+            <div style="display: flex; gap: 2rem; align-items: flex-start;">
+                <div class="figure" style="flex: 1; margin: 0;">
+                    <img src="assets/img/compare_baseline.png" alt="UFO Performance Comparison" style="max-width: 80%;">
+                    <div class="figure-caption">
+                        <strong>Figure 4.</strong> Multi-turn (5-turn) RL significantly outperforms single-turn baseline, achieving higher success rates (Pass @ 5) with similar inference cost.
+                    </div>
+                </div>
+                <div class="figure" style="flex: 1; margin: 0;">
+                    <img src="assets/img/multi-turn_training.png" alt="Multi-turn Training Process" style="max-width: 80%;">
+                    <div class="figure-caption">
+                        <strong>Figure 5.</strong> Performance comparison when evaluating with 5 turns after training with different maximum turns (1, 5, and 10). Training with 5 turns yields the best performance, while increasing to 10 turns offers no significant gain.
+                    </div>
+                </div>
+            </div>
+
+            <h3>Effectiveness of Unary Feedback</h3>
+            <p>
+                To further investigate the role of unary feedback, we compare model performance under different feedback availability conditions. In scenario (a), unary feedback is provided during both training and validation phases, while in scenario (b), unary feedback is available only during training but not at validation. The results show that access to unary feedback during both phases substantially improves validation success rate. In contrast, providing unary feedback solely during training does not yield improvements, indicating that the benefit of unary feedback is contingent on its availability at inference time.
+            </p>
+            <div class="figure">
+                <img src="assets/img/feedback_comparisons_side_by_side.png" alt="Effectiveness of Unary Feedback" style="max-width: 100%;">
+                <div class="figure-caption">
+                    <strong>Figure 6.</strong> Success rate comparison under different unary feedback settings: (a) feedback in both training and validation; (b) feedback only in training.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Experimental Analysis Section -->
+    <section class="section">
+        <div class="container">
+            <div class="section-title">
+                <h2>Experimental Analysis</h2>
+            </div>
+            
+            <div class="cards">
+                <div class="card">
+                    <div class="card-icon">
+                        <span style="font-size: 1.5rem;">🚀</span>
+                    </div>
+                    <h4 class="card-title">Multi-Turn RL Boosts Reasoning</h4>
+                    <div class="card-subtitle">Performance</div>
+                    <div class="card-content">
+                        <p><strong>+14% success rate</strong>&nbsp;over single-turn PPO baseline</p>
+                        <p>Benefits generalize to both multi-turn and single-turn inference</p>
+                        <p>Best results with 5-turn training; more turns yield diminishing returns</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">
+                        <span style="font-size: 1.5rem;">💡</span>
+                    </div>
+                    <h4 class="card-title">Unary Feedback Matters</h4>
+                    <div class="card-subtitle">Ablation</div>
+                    <div class="card-content">
+                        <p>Feedback in both training and validation is crucial for improvement</p>
+                        <p>Feedback only in training phase does <strong>&nbsp;not&nbsp;</strong> help at inference</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">
+                        <span style="font-size: 1.5rem;">⏱️</span>
+                    </div>
+                    <h4 class="card-title">Reward Design</h4>
+                    <div class="card-subtitle">Efficiency</div>
+                    <div class="card-content">
+                        <p>Exponential reward decay decreases the average number of actions required to solve problems by ~10%.</p>
+                        <p>Encourages faster and more efficient problem solving</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon">
+                        <span style="font-size: 1.5rem;">🔀</span>
+                    </div>
+                    <h4 class="card-title">Diversity of Answers</h4>
+                    <div class="card-subtitle">Exploration</div>
+                    <div class="card-content">
+                        <p>Non-repetitive answer ratio increases from 79.7% to 92.8%</p>
+                        <p>Multi-turn RL with UFO encourages answer diversity and strengthens robustness</p>
+                    </div>
+                </div>
+            </div>
+            
+
+
+        </div>
+    </section>
+
+    <!-- Conclusion Section -->
+    <section class="section">
+        <div class="container">
+            <div class="section-title">
+                <h2>Conclusion</h2>
+            </div>
+            
+            <p style="text-align: justify;">
+                In this work, we identify a key limitation of conventional single-turn reinforcement learning: its tendency to undermine multi-turn reasoning by encouraging repetitive and superficial responses. To overcome this, we introduce Unary Feedback as Observation (UFO)—a simple yet effective approach that incorporates minimal feedback into standard RL pipelines. UFO enables language models to recover and enhance both single-turn and multi-turn reasoning capabilities. Our experiments demonstrate a 14% improvement in multi-turn accuracy while maintaining single-turn performance. Furthermore, we show that integrating reward decay and repetition penalties fosters deeper reasoning, self-correction, and greater response diversity. Our method is lightweight, broadly applicable, and can be seamlessly integrated into existing RL training frameworks.
+            </p>
+            
+            <h3>Acknowledgement</h3>
+        <p>We thank all the contributors to this research and the institutions that supported this work. </p>
+
+
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 UFO Research Team. All rights reserved.</p>
+            <p>This website is licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a></p>
+            <p>Last updated: June 2025</p>
+        </div>
+    </footer>
+</body>
+</html>
