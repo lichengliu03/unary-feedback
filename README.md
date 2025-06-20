@@ -4,62 +4,85 @@
 
 ## Overview
 
-<!--
-Reinforcement Learning (RL) with rule-based rewards has shown promise in enhancing reasoning capabilities of large language models (LLMs). However, existing approaches have primarily focused on static, single-turn tasks like math reasoning and coding. Extending these methods to agent scenarios introduces two fundamental challenges:
+**"Let's Try Again"** addresses a critical gap in language model training: while single-turn reinforcement learning (RL) improves reasoning, these models fail in **multi-turn interactive scenarios**, often repeating the same wrong answers despite feedback.
 
-1. **Multi-turn Interactions**: Agents must perform sequential decision-making and react to environment feedback
-2. **Stochastic Environments**: Uncertainty where identical actions can lead to different outcomes
+### Key Problem
+Single-turn RL models lose the ability to revise reasoning across multiple turns. In 70% of failure cases, they produce identical answers across 5 interaction rounds, unable to incorporate simple feedback like "try again."
 
-RAGEN addresses these challenges through:
-- A Markov Decision Process (MDP) formulation for agent tasks
-- State-Thinking-Actions-Reward Policy Optimization (StarPO) algorithm that optimizes entire trajectory distributions
-- Progressive reward normalization strategies to handle diverse, complex environments
--->
+### Solution: UFO Framework
+**Unary Feedback as Observation (UFO)** transforms static datasets into multi-turn training by:
+- Using only minimal feedback signals ("Try Again")
+- Treating failure feedback as part of the observation
+- Enabling models to learn from historical mistakes
 
-Reinforcement Learning (RL) with rule-based rewards has shown promise in enhancing reasoning capabilities of large language models (LLMs). However, existing approaches have primarily focused on static, single-turn tasks like math reasoning and coding. Extending these methods to agent scenarios introduces two fundamental challenges:
+### Results
+- **14% improvement** in multi-turn success rates
+- **10% reduction** in average interaction turns
+- Better performance even in single-turn scenarios
+- **90% non-repetitive answers** (vs 80% baseline)
 
-1. **Multi-turn Interactions**: Agents must perform sequential decision-making and react to environment feedback
-2. **Stochastic Environments**: Uncertainty where identical actions can lead to different outcomes
+### Impact
+UFO enables effective multi-turn RL training on existing static datasets without expensive annotations, making it practical to train models that can learn from sparse feedback and improve iteratively through trial-and-error, just like humans do.
 
-To address these challenges, we propose a general RL framework: **StarPO** (**S**tate-**T**hinking-**A**ctions-**R**eward **P**olicy **O**ptimization), a comprehensive RL framework that provides a unified approach for training multi-turn, trajectory-level agents with flexible control over reasoning processes, reward assignment mechanisms, and prompt-rollout structures. 
-Building upon StarPO, we introduce **RAGEN**, a modular agent training and evaluation system that implements the complete training loop, including rollout generation, reward calculation, and trajectory optimization. RAGEN serves as a robust research infrastructure for systematically analyzing LLM agent training dynamics in multi-turn and stochastic environments.
+## Framework
 
-## Algorithm
+The UFO framework transforms static single-turn datasets into multi-turn interactive training through a simple yet effective approach.
 
-RAGEN introduces a reinforcement learning framework to train reasoning-capable LLM agents that can operate in interactive, stochastic environments. 
-
-<p align="center"><img src="public/starpo_logo.png" width="800px" alt="StarPO Framework" /></p>
+<p align="center"><img src="public/flow_chart.png" width="800px" alt="UFO Framework Flow" /></p>
 <p align="center" style="font-size: 16px; max-width: 800px; margin: 0 auto;">
-The StarPO (State-Thinking-Action-Reward Policy Optimization) framework with two interleaved stages: <b>rollout stage</b> and <b>update stage</b>. LLM iteratively generates reasoning-guided actions to interact with the environment to obtain trajectory-level rewards for LLM update to jointly   optimize reasoning and action strategies.
+The UFO framework flow: Static datasets are transformed into multi-turn episodes where models receive minimal feedback ("Try Again") and learn to revise their reasoning across multiple attempts.
 </p>
 
-The framework consists of two key components:
+### Problem Formulation
 
-### > MDP Formulation 
-We formulate agent-environment interactions as Markov Decision Processes (MDPs) where states and actions are token sequences, allowing LLMs to reason over environment dynamics. At time t, state $s_t$ transitions to the next state through action $a_t$ following a transition function. The policy generates actions given the trajectory history. The objective is to maximize expected cumulative rewards across multiple interaction turns.
+We model multi-turn problem solving as a finite-horizon Markov Decision Process (MDP) where:
+- **State**: Encodes the original question and history of past attempts with feedback
+- **Action**: All possible answers the model can generate
+- **Reward**: Binary signal (1 for correct, 0 for incorrect)
+- **Transition**: Agent generates answer, receives feedback, episode continues until success or max turns
 
-### > StarPO: Reinforcing Reasoning via Trajectory-Level Optimization
-StarPO is a general RL framework for optimizing entire multi-turn interaction trajectories for LLM agents.
-The algorithm alternates between two phases:
+### Unary Feedback as Observation (UFO)
 
-#### Rollout Stage: Reasoning-Interaction Trajectories
-Given an initial state, the LLM generates multiple trajectories. At each step, the model receives the trajectory history and generates a reasoning-guided action: `<think>...</think><ans> action </ans>`. The environment receives the action and returns feedback (reward and next state).
+The core innovation is treating minimal feedback as part of the observation:
 
-#### Update Stage: Multi-turn Trajectory Optimization 
-After generating trajectories, we train LLMs to optimize expected rewards. Instead of step-by-step optimization, StarPO optimizes entire trajectories using importance sampling. This approach enables long-horizon reasoning while maintaining computational efficiency. 
-StarPO supports multiple optimization strategies: 
-- PPO: We estimate token-level advantages using a value function over trajectories
-- GRPO: We assign normalized reward to the full trajectory
+```
+Question: What is the value of x + y?
+Attempt 1: [wrong answer]
+Feedback: Try Again.
+Attempt 2: [correct answer]
+```
 
-Rollout and update stages interleave in StarPO, enabling both online and offline learning.
+**Key Features:**
+- Only **negative feedback** (e.g., "Try Again") is included in context
+- No positive confirmation signals are ever shown
+- Model must learn to revise based solely on failure history
+- Episodes terminate immediately upon correct answer
 
-<!--
-### > Reward Normalization Strategies 
-We implement three progressive normalization strategies to stabilize training: 
-1. **ARPO**: Preserves raw rewards directly 
-2. **BRPO**: Normalizes rewards across each training batch using batch statistics
-3. **GRPO**: Normalizes within prompt groups to balance learning across varying task difficulties
--->
+### Training with PPO
+
+We use Proximal Policy Optimization (PPO) to train the policy:
+- Agent observes input with full interaction history
+- Generates answer and receives binary reward
+- Policy updates using clipped surrogate objective
+- Value function provides advantage estimates for stable training
+
+### Reward Design
+
+Two complementary strategies encourage efficient reasoning:
+
+**1. Exponential Reward Decay:**
+```
+DecayReward(t) = γ^t if correct, 0 otherwise
+```
+Favors solving problems in fewer turns.
+
+**2. Repetition Penalty:**
+```
+Penalty(τ) = λ · (1 - E(τ)/T)
+```
+Penalizes duplicate answers, encouraging diverse reasoning strategies.
+
+This framework enables effective multi-turn RL training on static datasets without requiring expensive annotations or complex environments.
 
 ## Environment Setup
 For detailed setup instructions, please check our [documentation](https://ragen-tutorial.readthedocs.io/). Here's a quick start guide:
