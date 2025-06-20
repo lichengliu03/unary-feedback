@@ -1,4 +1,4 @@
-<h1 align="center"> RAGEN: Training Agents by Reinforcing Reasoning </h1>
+<h1 align="center"> <em>Let's Try Again</em>: Eliciting Multi-Turn Reasoning in Language Models via Simplistic Feedback </h1>
 
 
 
