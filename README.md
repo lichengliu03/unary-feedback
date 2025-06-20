@@ -189,3 +189,6 @@ Success rate comparison under different unary feedback settings: (a) feedback in
 - Multi-turn RL with UFO encourages answer diversity and strengthens robustness
 
 
+## Acknowledgements
+
+We thank the [DeepSeek](https://github.com/deepseek-ai/DeepSeek-R1) team for providing the DeepSeek-R1 model and early conceptual inspirations. We are grateful to the [veRL](https://github.com/volcengine/verl) team for their infrastructure support and the [RAGEN](https://github.com/RAGEN-AI/RAGEN) team for their multi-turn RL framework. 
