@@ -27,6 +27,3 @@ debugpy
 
 together
 anthropic
-
-# This is optional, but needs to be installed with main requirements if you want to use webshop
--r external/webshop-minimal/requirements.txt

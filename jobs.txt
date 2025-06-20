@@ -1,4 +1,3 @@
-python train.py --config-name _4_countdown system.CUDA_VISIBLE_DEVICES="0" trainer.experiment_name=countdown-base
 python train.py --config-name _5_metamathqa system.CUDA_VISIBLE_DEVICES="0" trainer.experiment_name=metamathqa-base
 
 
