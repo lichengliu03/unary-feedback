@@ -1,0 +1,14 @@
+defaults:
+  - base
+
+trainer:
+  experiment_name: frozenlake-main
+
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["FrozenLake"]
+  val:
+    env_configs:
+      tags: ["FrozenLake"]

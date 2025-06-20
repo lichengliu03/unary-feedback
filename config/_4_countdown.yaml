@@ -1,0 +1,18 @@
+defaults:
+  - base
+
+trainer:
+  experiment_name: countdown
+
+
+agent_proxy:
+  max_turn: 1
+  max_actions_per_turn: 1
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["Countdown"]
+  val:
+    env_configs:
+      tags: ["Countdown"]

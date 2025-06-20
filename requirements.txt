@@ -1,0 +1,32 @@
+IPython
+matplotlib
+gym
+gym_sokoban
+peft
+accelerate
+codetiming
+datasets
+dill
+flash-attn
+hydra-core
+numpy
+pandas
+pybind11
+ray>=2.10
+tensordict==0.6.2
+transformers
+vllm==0.8.2
+wandb
+gymnasium
+gymnasium[toy-text]
+
+pyarrow>=15.0.0
+pylatexenc
+torchdata
+debugpy
+
+together
+anthropic
+
+# This is optional, but needs to be installed with main requirements if you want to use webshop
+-r external/webshop-minimal/requirements.txt
