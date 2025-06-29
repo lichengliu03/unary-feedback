@@ -7,7 +7,7 @@ accelerate
 codetiming
 datasets
 dill
-flash-attn
+flash-attn==2.7.4.post1
 hydra-core
 numpy
 pandas
