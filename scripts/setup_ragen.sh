@@ -99,7 +99,7 @@ main() {
         pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
         
         print_step "Installing flash-attention..."
-        pip3 install flash-attn --no-build-isolation
+        pip3 install flash-attn==2.7.4.post1 --no-build-isolation
     else
         print_step "Installing PyTorch without CUDA support..."
         pip install torch==2.6.0
