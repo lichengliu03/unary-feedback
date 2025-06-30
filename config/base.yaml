@@ -5,8 +5,8 @@ defaults:
 system:
   CUDA_VISIBLE_DEVICES: "0, 1"
 
-micro_batch_size_per_gpu: 2
-ppo_mini_batch_size: 16
+micro_batch_size_per_gpu: 1
+ppo_mini_batch_size: 8
 model_path: Qwen/Qwen2.5-3B-Instruct
 enable_response_mask: True
 grpo_advantage_length_weight: False # if you do not enable this and critic/advantage_estimator is GRPO, and the critic/advantages/mean is too low, then you can try enabling this to encourage reasoning and forbid collapse
@@ -94,7 +94,7 @@ algorithm:
     kl_coef: 0.001
 
 trainer:
-  project_name: ragen_appendix
+  project_name: ufo
   experiment_name: test
   total_training_steps: 200
   validation_steps: 1 # validation instances = validation_steps * val_env_groups * group_size
