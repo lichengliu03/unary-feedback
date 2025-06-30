@@ -89,10 +89,10 @@ For detailed setup instructions, please check our [documentation](https://ragen-
 
 ```bash
 # Setup environment and download data (2.7MB)
-bash scripts/setup.sh
+bash scripts/setup_ragen.sh
 ```
 
-If this fails, you can follow the manual setup instructions in `scripts/setup.md`.
+If this fails, you can follow the manual setup instructions in `scripts/setup_ragen.md`.
 
 ## Training Models
 Here's how to train models with RAGEN framework:
