@@ -19,7 +19,7 @@ class StaticEnv(BaseLanguageBasedEnv):
         dataset_config=getattr(config, "dataset_config", None)
         if dataset_config is None:
             dataset_config=REGISTERD_STATIC_ENV[self.config.dataset_name]["config"]
-        self.dataset = load_dataset(**dataset_config, cache_dir=self.config.cache_dir)
+        self.dataset = load_dataset(**dataset_config, cache_dir=self.config.cache_dir, trust_remote_code=True)
         
         if self.config.split is None:
             self.split = list(self.dataset.keys())[0]
