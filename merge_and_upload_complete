@@ -1,432 +1,133 @@
 #!/usr/bin/env python3
 """
-Complete model merging and upload tool
-Correctly merge distributed training models from checkpoints and upload to Hugging Face Hub
+upload_checkpoint_to_hf.py
+==========================
+通用上传脚本：将本地 Qwen2/LLM 权重 (单文件或分片目录) 以及 tokenizer/config 一并上传到 Hugging Face Hub。
 
-Usage:
-python merge_and_upload_complete.py --actor-repo username/model-name --step 200 --token your_hf_token
+用法示例 (bash)：
+    python scripts/upload_checkpoint_to_hf.py \
+        --model-path merged_actor_model_correct/model.safetensors \
+        --config-dir checkpoints/ufo/test/global_step_200/actor/huggingface \
+        --repo-name LichengLiu03/qwen2.5-3b-UFO-1turn \
+        --token $HF_TOKEN
+
+参数说明：
+    --model-path   必填，模型文件 (model.safetensors) 或包含分片与 index.json 的目录。
+    --config-dir   可选，包含 tokenizer.json / config.json 等的目录；若省略且 --model-path
+                   是目录，则自动把该目录作为 config 源。
+    --repo-name    目标 Hugging Face 仓库名 (username/model-name)。
+    --token        Hugging Face 访问令牌。
+    --private      (flag) 创建私有仓库。
 """
 
-import torch
-import os
-import json
-import shutil
 import argparse
-from collections import OrderedDict
-from safetensors.torch import save_file
-from transformers import Qwen2ForCausalLM, Qwen2Config
-from huggingface_hub import HfApi, upload_folder
+import os
+import sys
+from pathlib import Path
+from typing import List
 
-def merge_distributed_model_correct(rank_0_path, rank_1_path):
-    """Correctly merge model weights from 2 GPU ranks - for data parallel, weights should be identical"""
-    print(f"Loading rank 0 model: {rank_0_path}")
-    rank_0_state = torch.load(rank_0_path, map_location='cpu', weights_only=False)
-    
-    print(f"Loading rank 1 model: {rank_1_path}")
-    rank_1_state = torch.load(rank_1_path, map_location='cpu', weights_only=False)
-    
-    # Extract model weights (usually under 'model' key)
-    rank_0_model = rank_0_state.get('model', rank_0_state)
-    rank_1_model = rank_1_state.get('model', rank_1_state)
-    
-    print("Validating and merging model weights...")
-    
-    merged_state = OrderedDict()
-    
-    # For data parallel training, weights from both ranks should be identical
-    # We only use rank 0 weights, but validate key parameters
-    for key in rank_0_model.keys():
-        tensor_0 = rank_0_model[key]
-        
-        # Handle DTensor - convert to regular tensor
-        if hasattr(tensor_0, '_local_tensor'):
-            tensor_0 = tensor_0._local_tensor
-        if str(type(tensor_0)).find('DTensor') >= 0:
-            tensor_0 = tensor_0.to_local()
-            
-        merged_state[key] = tensor_0
-        
-        # Validate a few key parameters
-        if key in rank_1_model and key in ['model.embed_tokens.weight', 'model.norm.weight', 'lm_head.weight']:
-            tensor_1 = rank_1_model[key]
-            if hasattr(tensor_1, '_local_tensor'):
-                tensor_1 = tensor_1._local_tensor
-            if str(type(tensor_1)).find('DTensor') >= 0:
-                tensor_1 = tensor_1.to_local()
-                
-            try:
-                if not torch.allclose(tensor_0, tensor_1, rtol=1e-5, atol=1e-6):
-                    print(f"⚠️  Warning: {key} differs between ranks")
-                else:
-                    print(f"✅ Validation passed: {key}")
-            except:
-                print(f"⚠️  Unable to compare: {key}")
-    
-    return merged_state
+from huggingface_hub import HfApi, upload_file, upload_folder
 
-def convert_to_hf_format_simple(merged_state, config_path):
-    """Simplified HF format conversion"""
-    print("Converting to Hugging Face format...")
-    
-    # Load config
-    with open(config_path, 'r') as f:
-        config_dict = json.load(f)
-    
-    # Clean state dict key names
-    hf_state = OrderedDict()
-    
-    for key, value in merged_state.items():
-        # Remove possible prefixes
-        clean_key = key
-        if clean_key.startswith('module.'):
-            clean_key = clean_key[7:]
-        if clean_key.startswith('model.'):
-            clean_key = clean_key[6:]
-        
-        hf_state[clean_key] = value
-    
-    return hf_state
 
-def save_model_correctly(state_dict, output_dir):
-    """Correctly save model as safetensors format"""
-    print("Saving model as safetensors format...")
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Calculate total size
-    total_size = 0
-    for tensor in state_dict.values():
-        total_size += tensor.numel() * tensor.element_size()
-    
-    print(f"Total model size: {total_size / (1024**3):.2f} GB")
-    
-    # Since model is ~6GB, split into two ~3GB files
-    max_shard_size = 3 * 1024**3  # 3GB
-    
-    shard_1 = {}
-    shard_2 = {}
-    shard_1_size = 0
-    shard_2_size = 0
-    
-    # Sort by parameter size
-    sorted_items = sorted(state_dict.items(), key=lambda x: x[1].numel() * x[1].element_size(), reverse=True)
-    
-    for name, tensor in sorted_items:
-        tensor_size = tensor.numel() * tensor.element_size()
-        
-        # Choose the shard with smaller current size
-        if shard_1_size <= shard_2_size:
-            shard_1[name] = tensor
-            shard_1_size += tensor_size
-        else:
-            shard_2[name] = tensor
-            shard_2_size += tensor_size
-    
-    # Save shards
-    shard_1_path = os.path.join(output_dir, "model-00001-of-00002.safetensors")
-    shard_2_path = os.path.join(output_dir, "model-00002-of-00002.safetensors")
-    
-    print(f"Saving shard 1 ({shard_1_size / (1024**3):.2f} GB): {shard_1_path}")
-    save_file(shard_1, shard_1_path)
-    
-    print(f"Saving shard 2 ({shard_2_size / (1024**3):.2f} GB): {shard_2_path}")
-    save_file(shard_2, shard_2_path)
-    
-    # Create index file
-    index = {
-        "metadata": {"total_size": total_size},
-        "weight_map": {}
-    }
-    
-    for name in shard_1.keys():
-        index["weight_map"][name] = "model-00001-of-00002.safetensors"
-    
-    for name in shard_2.keys():
-        index["weight_map"][name] = "model-00002-of-00002.safetensors"
-    
-    index_path = os.path.join(output_dir, "model.safetensors.index.json")
-    with open(index_path, 'w') as f:
-        json.dump(index, f, indent=2)
-    
-    print(f"Created index file: {index_path}")
-    
-    return total_size
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Upload checkpoint & configs to HF Hub")
+    p.add_argument("--model-path", required=True, help="Path to model.safetensors or shard directory")
+    p.add_argument("--config-dir", help="Directory containing tokenizer/config files")
+    p.add_argument("--repo-name", required=True, help="HF repo (username/model)")
+    p.add_argument("--token", required=True, help="HF token (env var or string)")
+    p.add_argument("--private", action="store_true", help="Create private repo")
+    return p.parse_args()
 
-def copy_config_files(source_dir, target_dir):
-    """Copy config files to target directory"""
-    print("Copying config files...")
-    
-    config_files = [
+
+def gather_config_files(config_dir: Path) -> List[Path]:
+    patterns = [
         "config.json",
-        "tokenizer.json", 
+        "generation_config.json",
+        "tokenizer.json",
         "tokenizer_config.json",
-        "special_tokens_map.json",
         "vocab.json",
         "merges.txt",
+        "special_tokens_map.json",
         "added_tokens.json",
-        "chat_template.jinja"
+        "chat_template.jinja",
     ]
-    
-    for file_name in config_files:
-        source_path = os.path.join(source_dir, file_name)
-        if os.path.exists(source_path):
-            target_path = os.path.join(target_dir, file_name)
-            shutil.copy2(source_path, target_path)
-            print(f"Copied: {file_name}")
+    files: List[Path] = []
+    for name in patterns:
+        f = config_dir / name
+        if f.exists():
+            files.append(f)
+    return files
 
-def upload_model_to_hf(model_path, repo_name, token=None, private=False):
-    """
-    Upload model to Hugging Face Hub
-    
-    Args:
-        model_path: Local model path
-        repo_name: Hugging Face repository name (format: username/model-name)
-        token: Hugging Face token (optional if already logged in)
-        private: Whether to create private repository
-    """
-    
-    api = HfApi(token=token)
-    
-    print(f"Uploading {model_path} to {repo_name}...")
-    
-    try:
-        # Create repository (if doesn't exist)
-        api.create_repo(
-            repo_id=repo_name,
-            exist_ok=True,
-            private=private,
-            repo_type="model"
-        )
-        
-        # Upload entire folder
+
+def main() -> None:
+    args = parse_args()
+
+    model_path = Path(args.model_path).expanduser().resolve()
+    if not model_path.exists():
+        sys.exit(f"❌ model-path 不存在: {model_path}")
+
+    # config-dir 推断
+    config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
+    if config_dir is None:
+        if model_path.is_dir():
+            config_dir = model_path  # 直接用同一目录
+        else:
+            sys.exit("❌ 未指定 --config-dir，且 --model-path 不是目录，无法确定 tokenizer/config")
+    else:
+        if not config_dir.exists():
+            sys.exit(f"❌ config-dir 不存在: {config_dir}")
+
+    print(f"Model path : {model_path}")
+    print(f"Config dir : {config_dir}")
+    print(f"Repo name  : {args.repo_name}")
+
+    api = HfApi(token=args.token)
+    api.create_repo(
+        repo_id=args.repo_name,
+        repo_type="model",
+        exist_ok=True,
+        private=args.private,
+    )
+
+    # 上传模型权重
+    if model_path.is_dir():
+        print("Uploading weight directory (may take a while)…")
         upload_folder(
-            folder_path=model_path,
-            repo_id=repo_name,
+            folder_path=str(model_path),
+            repo_id=args.repo_name,
             repo_type="model",
-            token=token,
-            commit_message=f"Upload {os.path.basename(model_path)} model"
+            token=args.token,
+            commit_message="Upload model weights directory",
         )
-        
-        print(f"✅ Successfully uploaded to: https://huggingface.co/{repo_name}")
-        
-    except Exception as e:
-        print(f"❌ Upload failed: {e}")
-        return False
-    
-    return True
-
-def merge_and_upload_actor_model(checkpoints_base, global_step, output_dir, repo_name=None, token=None, private=False):
-    """Merge and upload actor model"""
-    
-    print("=" * 60)
-    print(f"Correctly merging Actor model (global_step_{global_step})")
-    print("=" * 60)
-    
-    # Build paths
-    step_path = os.path.join(checkpoints_base, f"global_step_{global_step}")
-    actor_rank_0 = os.path.join(step_path, "actor", "model_world_size_2_rank_0.pt")
-    actor_rank_1 = os.path.join(step_path, "actor", "model_world_size_2_rank_1.pt") 
-    actor_config = os.path.join(step_path, "actor", "huggingface", "config.json")
-    actor_hf_dir = os.path.join(step_path, "actor", "huggingface")
-    
-    # Check if files exist
-    required_files = [actor_rank_0, actor_rank_1, actor_config]
-    missing_files = [f for f in required_files if not os.path.exists(f)]
-    
-    if missing_files:
-        print("❌ Required files not found:")
-        for f in missing_files:
-            print(f"   {f}")
-        return False
-    
-    # Merge actor model
-    actor_merged = merge_distributed_model_correct(actor_rank_0, actor_rank_1)
-    
-    # Convert to HF format
-    actor_hf_state = convert_to_hf_format_simple(actor_merged, actor_config)
-    
-    # Create output directory (clear existing content)
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Save model
-    total_size = save_model_correctly(actor_hf_state, output_dir)
-    
-    # Copy config files
-    copy_config_files(actor_hf_dir, output_dir)
-    
-    print(f"\n✅ Actor model correctly saved to: {output_dir}")
-    print(f"📊 Total size: {total_size / (1024**3):.2f} GB")
-    
-    # Verify file sizes
-    print("\n📁 File list:")
-    for file in os.listdir(output_dir):
-        if file.endswith('.safetensors'):
-            file_path = os.path.join(output_dir, file)
-            size_gb = os.path.getsize(file_path) / (1024**3)
-            print(f"   {file}: {size_gb:.2f} GB")
-    
-    # Upload to Hugging Face (if repository name specified)
-    if repo_name:
-        print(f"\n{'=' * 60}")
-        print("Uploading to Hugging Face Hub")
-        print("=" * 60)
-        success = upload_model_to_hf(output_dir, repo_name, token, private)
-        return success
-    
-    return True
-
-def merge_and_upload_critic_model(checkpoints_base, global_step, output_dir, repo_name=None, token=None, private=False):
-    """Merge and upload critic model"""
-    
-    print("=" * 60)
-    print(f"Correctly merging Critic model (global_step_{global_step})")
-    print("=" * 60)
-    
-    # Build paths
-    step_path = os.path.join(checkpoints_base, f"global_step_{global_step}")
-    critic_rank_0 = os.path.join(step_path, "critic", "model_world_size_2_rank_0.pt")
-    critic_rank_1 = os.path.join(step_path, "critic", "model_world_size_2_rank_1.pt") 
-    critic_config = os.path.join(step_path, "critic", "huggingface", "config.json")
-    critic_hf_dir = os.path.join(step_path, "critic", "huggingface")
-    
-    # Check if files exist
-    required_files = [critic_rank_0, critic_rank_1, critic_config]
-    missing_files = [f for f in required_files if not os.path.exists(f)]
-    
-    if missing_files:
-        print("❌ Required files not found:")
-        for f in missing_files:
-            print(f"   {f}")
-        return False
-    
-    # Merge critic model
-    critic_merged = merge_distributed_model_correct(critic_rank_0, critic_rank_1)
-    
-    # Convert to HF format
-    critic_hf_state = convert_to_hf_format_simple(critic_merged, critic_config)
-    
-    # Create output directory (clear existing content)
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Save model
-    total_size = save_model_correctly(critic_hf_state, output_dir)
-    
-    # Copy config files
-    copy_config_files(critic_hf_dir, output_dir)
-    
-    print(f"\n✅ Critic model correctly saved to: {output_dir}")
-    print(f"📊 Total size: {total_size / (1024**3):.2f} GB")
-    
-    # Verify file sizes
-    print("\n📁 File list:")
-    for file in os.listdir(output_dir):
-        if file.endswith('.safetensors'):
-            file_path = os.path.join(output_dir, file)
-            size_gb = os.path.getsize(file_path) / (1024**3)
-            print(f"   {file}: {size_gb:.2f} GB")
-    
-    # Upload to Hugging Face (if repository name specified)
-    if repo_name:
-        print(f"\n{'=' * 60}")
-        print("Uploading to Hugging Face Hub")
-        print("=" * 60)
-        success = upload_model_to_hf(output_dir, repo_name, token, private)
-        return success
-    
-    return True
-
-def main():
-    parser = argparse.ArgumentParser(description="Merge distributed training models and upload to Hugging Face Hub")
-    
-    # Required parameters
-    parser.add_argument("--checkpoints-path", type=str, default="checkpoints/ufo/test", 
-                        help="Checkpoints base path")
-    parser.add_argument("--step", type=int, default=200, 
-                        help="Global step number (default: 200)")
-    
-    # Upload related parameters
-    parser.add_argument("--actor-repo", type=str, help="Actor model repository name (username/model-name)")
-    parser.add_argument("--critic-repo", type=str, help="Critic model repository name (username/model-name)")
-    parser.add_argument("--token", type=str, help="Hugging Face token")
-    parser.add_argument("--private", action="store_true", help="Create private repository (default: public)")
-    
-    # Output directories
-    parser.add_argument("--actor-output", type=str, default="merged_actor_model", 
-                        help="Actor model output directory")
-    parser.add_argument("--critic-output", type=str, default="merged_critic_model", 
-                        help="Critic model output directory")
-    
-    # Model selection
-    parser.add_argument("--actor-only", action="store_true", help="Process only Actor model")
-    parser.add_argument("--critic-only", action="store_true", help="Process only Critic model")
-    
-    args = parser.parse_args()
-    
-    # Validate checkpoints path
-    if not os.path.exists(args.checkpoints_path):
-        print(f"❌ Checkpoints path does not exist: {args.checkpoints_path}")
-        return
-    
-    step_path = os.path.join(args.checkpoints_path, f"global_step_{args.step}")
-    if not os.path.exists(step_path):
-        print(f"❌ Global step path does not exist: {step_path}")
-        return
-    
-    success_count = 0
-    
-    # Process Actor model
-    if not args.critic_only:
-        print("Starting Actor model processing...")
-        success = merge_and_upload_actor_model(
-            args.checkpoints_path, 
-            args.step, 
-            args.actor_output,
-            args.actor_repo, 
-            args.token, 
-            args.private
+    else:
+        print("Uploading single model.safetensors file…")
+        upload_file(
+            path_or_fileobj=str(model_path),
+            path_in_repo="model.safetensors",
+            repo_id=args.repo_name,
+            repo_type="model",
+            token=args.token,
+            commit_message="Upload single model.safetensors",
         )
-        if success:
-            success_count += 1
-    
-    # Process Critic model
-    if not args.actor_only:
-        print("\nStarting Critic model processing...")
-        success = merge_and_upload_critic_model(
-            args.checkpoints_path, 
-            args.step, 
-            args.critic_output,
-            args.critic_repo, 
-            args.token, 
-            args.private
-        )
-        if success:
-            success_count += 1
-    
-    # Summary
-    print(f"\n{'=' * 60}")
-    print("Processing completed!")
-    print("=" * 60)
-    
-    if not args.critic_only:
-        print(f"Actor model: {args.actor_output}")
-        if args.actor_repo:
-            print(f"Actor repository: https://huggingface.co/{args.actor_repo}")
-    
-    if not args.actor_only:
-        print(f"Critic model: {args.critic_output}")
-        if args.critic_repo:
-            print(f"Critic repository: https://huggingface.co/{args.critic_repo}")
-    
-    print(f"\nSuccessfully processed {success_count} model(s)")
-    
-    if not args.actor_repo and not args.critic_repo:
-        print("\n💡 Tip: To upload to Hugging Face, use --actor-repo and/or --critic-repo parameters")
-        print("Example:")
-        print("  python merge_and_upload_complete.py --step 200 --actor-repo username/my-actor-model --token your_hf_token")
+
+    # 上传配置 / tokenizer
+    cfg_files = gather_config_files(config_dir)
+    if cfg_files:
+        print(f"Uploading {len(cfg_files)} tokenizer/config files…")
+        for f in cfg_files:
+            upload_file(
+                path_or_fileobj=str(f),
+                path_in_repo=f.name,
+                repo_id=args.repo_name,
+                repo_type="model",
+                token=args.token,
+                commit_message=f"Add {f.name}",
+            )
+    else:
+        print("⚠️ 未找到任何 tokenizer/config 文件，已跳过。")
+
+    print("✅ Upload finished!")
+
 
 if __name__ == "__main__":
     main() 
