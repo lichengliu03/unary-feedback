@@ -2,22 +2,25 @@
 """
 upload_checkpoint_to_hf.py
 ==========================
-通用上传脚本：将本地 Qwen2/LLM 权重 (单文件或分片目录) 以及 tokenizer/config 一并上传到 Hugging Face Hub。
+Utility script to upload local checkpoints (single `model.safetensors` or a sharded
+directory) together with tokenizer / config files to the Hugging Face Hub.
 
-用法示例 (bash)：
+Example (bash):
     python scripts/upload_checkpoint_to_hf.py \
         --model-path merged_actor_model_correct/model.safetensors \
         --config-dir checkpoints/ufo/test/global_step_200/actor/huggingface \
         --repo-name LichengLiu03/qwen2.5-3b-UFO-1turn \
         --token $HF_TOKEN
 
-参数说明：
-    --model-path   必填，模型文件 (model.safetensors) 或包含分片与 index.json 的目录。
-    --config-dir   可选，包含 tokenizer.json / config.json 等的目录；若省略且 --model-path
-                   是目录，则自动把该目录作为 config 源。
-    --repo-name    目标 Hugging Face 仓库名 (username/model-name)。
-    --token        Hugging Face 访问令牌。
-    --private      (flag) 创建私有仓库。
+Arguments:
+    --model-path   Required. Path to `model.safetensors` OR a directory that contains
+                   shards (`model-xxxx-of-xxxx.safetensors` + `index.json`).
+    --config-dir   Optional. Directory that contains `tokenizer.json`, `config.json`,
+                   etc. If omitted and `--model-path` is a directory, the same
+                   directory will be used.
+    --repo-name    Target HF repository (username/model-name).
+    --token        Hugging Face access token.
+    --private      Create a private repo (flag).
 """
 
 import argparse
@@ -64,18 +67,19 @@ def main() -> None:
 
     model_path = Path(args.model_path).expanduser().resolve()
     if not model_path.exists():
-        sys.exit(f"❌ model-path 不存在: {model_path}")
+        sys.exit(f"❌ model-path does not exist: {model_path}")
 
-    # config-dir 推断
+    # infer config directory
     config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
     if config_dir is None:
         if model_path.is_dir():
-            config_dir = model_path  # 直接用同一目录
+            # fall back to the same directory as model_path
+            config_dir = model_path
         else:
-            sys.exit("❌ 未指定 --config-dir，且 --model-path 不是目录，无法确定 tokenizer/config")
+            sys.exit("❌ --config-dir is missing and --model-path is not a directory, tokenizer/config cannot be located")
     else:
         if not config_dir.exists():
-            sys.exit(f"❌ config-dir 不存在: {config_dir}")
+            sys.exit(f"❌ config-dir does not exist: {config_dir}")
 
     print(f"Model path : {model_path}")
     print(f"Config dir : {config_dir}")
@@ -89,7 +93,7 @@ def main() -> None:
         private=args.private,
     )
 
-    # 上传模型权重
+    # upload model weights
     if model_path.is_dir():
         print("Uploading weight directory (may take a while)…")
         upload_folder(
@@ -110,7 +114,7 @@ def main() -> None:
             commit_message="Upload single model.safetensors",
         )
 
-    # 上传配置 / tokenizer
+    # upload config / tokenizer
     cfg_files = gather_config_files(config_dir)
     if cfg_files:
         print(f"Uploading {len(cfg_files)} tokenizer/config files…")
@@ -124,7 +128,7 @@ def main() -> None:
                 commit_message=f"Add {f.name}",
             )
     else:
-        print("⚠️ 未找到任何 tokenizer/config 文件，已跳过。")
+        print("⚠️ No tokenizer/config files found, skipped.")
 
     print("✅ Upload finished!")
 
