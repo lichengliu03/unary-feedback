@@ -64,6 +64,27 @@ def process_gpqa(item: Dict[str, Any]) -> Tuple[str, str]:
     answer = extract_answer_from_text(item["Correct Answer"])
     return question, answer
 
+def process_hotpotqa(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process HotpotQA dataset item."""
+    question = item["question"]
+    answer = item["answer"]
+    
+    # Optionally add context information to the question
+    if "context" in item and item["context"]:
+        context_info = []
+        titles = item["context"]["title"]
+        sentences = item["context"]["sentences"]
+        
+        # Combine context from multiple documents
+        for i, (title, doc_sentences) in enumerate(zip(titles, sentences)):
+            if len(context_info) < 3:  # Limit context to avoid too long prompts
+                context_info.append(f"Document {i+1} ({title}): {' '.join(doc_sentences[:2])}")  # First 2 sentences
+        
+        if context_info:
+            question = f"Context: {' | '.join(context_info)}\n\nQuestion: {question}"
+    
+    return question, answer
+
 # ====== Scoring Functions ======
 
 def compute_score_exact_match(prediction: str, label: str) -> Dict[str, Any]:
@@ -173,4 +194,12 @@ REGISTERD_STATIC_ENV = {
     #     "processor": process_gpqa,
     #     "compute_score": compute_score_exact_match
     # }
+    "hotpotqa": {
+        "config": {
+            "path": "hotpotqa/hotpot_qa",
+            "name": "distractor",
+        },
+        "processor": process_hotpotqa,
+        "compute_score": compute_score_exact_match
+    }
 }
