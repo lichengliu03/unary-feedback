@@ -91,6 +91,15 @@ custom_envs:
     env_instruction: "You are solving Math problems. "
     max_tokens: 100
     env_config: null
+
+  HotpotQA:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering multi-hop reasoning questions. Use the provided context to answer the question accurately. "
+    max_tokens: 150
+    env_config:
+      dataset_name: hotpotqa
+
   WebShop:
     env_type: webshop
     max_actions_per_traj: 10
