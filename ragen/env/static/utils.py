@@ -45,9 +45,16 @@ def process_gsm8k(item: Dict[str, Any]) -> Tuple[str, str]:
     return question, answer
 
 def process_theoremqa(item: Dict[str, Any]) -> Tuple[str, str]:
-    """Process TheoremQA dataset item."""
+    """Process TheoremQA dataset item with image support."""
     question = item["Question"]
     answer = str(item["Answer"])
+    
+    # Handle images if present
+    if item.get("Picture") is not None:
+        # For environments with multimodal support, add image token
+        # The image will be handled separately in the multimodal pipeline
+        question = f"<image>\n{question}"
+    
     return question, answer
 
 def process_mmlu(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -171,13 +178,13 @@ REGISTERD_STATIC_ENV = {
         "processor": process_gsm8k,
         "compute_score": compute_score_numeric
     },
-    # "theoremqa": {
-    #     "config": {
-    #         "path": "TIGER-Lab/TheoremQA",
-    #     },
-    #     "processor": process_theoremqa,
-    #     "compute_score": compute_score_numeric
-    # },
+    "theoremqa": {
+        "config": {
+            "path": "TIGER-Lab/TheoremQA",
+        },
+        "processor": process_theoremqa,
+        "compute_score": compute_score_numeric
+    },
     "mmlu": {
         "config": {
             "path": "cais/mmlu",
