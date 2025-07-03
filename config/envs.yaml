@@ -100,6 +100,14 @@ custom_envs:
     env_config:
       dataset_name: hotpotqa
 
+  TheoremQA:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are solving Math problems."
+    max_tokens: 200
+    env_config:
+      dataset_name: theoremqa
+
   WebShop:
     env_type: webshop
     max_actions_per_traj: 10
