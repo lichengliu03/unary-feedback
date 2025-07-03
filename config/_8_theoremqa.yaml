@@ -1,0 +1,11 @@
+defaults:
+  - base
+  - _self_
+    
+es_manager:
+  train:
+    env_configs:
+      tags: ["TheoremQA"]
+  val:
+    env_configs:
+      tags: ["TheoremQA"]
