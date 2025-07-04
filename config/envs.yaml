@@ -140,3 +140,35 @@ custom_envs:
     #   data_path: /root/RAGEN-Dev/external/webshop-minimal/webshop_minimal
     #   file_path: /root/RAGEN-Dev/external/webshop-minimal/webshop_minimal/data/items_shuffle.json
 
+  GSM8k:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are solving math problems."
+    max_tokens: 200
+    env_config:
+      dataset_name: gsm8k
+
+  Musique:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering multi-hop open-domain questions. Use the provided context to answer accurately."
+    max_tokens: 150
+    env_config:
+      dataset_name: musique
+
+  MMLU:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering multiple-choice academic questions. Provide the correct option letter."
+    max_tokens: 200
+    env_config:
+      dataset_name: mmlu
+
+  MMLUPro:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering advanced multiple-choice questions. Provide the correct option letter."
+    max_tokens: 200
+    env_config:
+      dataset_name: mmlu_pro
+
