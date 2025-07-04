@@ -172,3 +172,11 @@ custom_envs:
     env_config:
       dataset_name: mmlu_pro
 
+  ConcurrentQA:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering multi-hop concurrent retrieval questions. Provide concise answers."
+    max_tokens: 200
+    env_config:
+      dataset_name: concurrentqa
+
