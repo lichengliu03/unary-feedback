@@ -123,6 +123,17 @@ def process_mmlu_pro(item: Dict[str, Any]) -> Tuple[str, str]:
         answer = chr(65 + answer_idx)
     return formatted_question, answer
 
+def process_concurrentqa(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process ConcurrentQA dataset item."""
+    question = item.get("question")
+    # 'answer' field may be string or list; handle both.
+    ans = item.get("answer")
+    if isinstance(ans, list):
+        answer = ans[0] if ans else ""
+    else:
+        answer = ans
+    return question, answer
+
 # ====== Scoring Functions ======
 
 def compute_score_exact_match(prediction: str, label: str) -> Dict[str, Any]:
@@ -260,5 +271,13 @@ REGISTERD_STATIC_ENV = {
         },
         "processor": process_mmlu_pro,
         "compute_score": compute_score_multiple_choice
+    },
+    "concurrentqa": {
+        "config": {
+            "path": "stanfordnlp/concurrentqa",
+            "name": "default",
+        },
+        "processor": process_concurrentqa,
+        "compute_score": compute_score_exact_match
     }
 }
