@@ -171,9 +171,14 @@ def compute_score_numeric(prediction: str, label: str) -> Dict[str, Any]:
     }
 
 def compute_score_multiple_choice(prediction: str, label: str) -> Dict[str, Any]:
-    """Score multiple choice answers (A, B, C, D)."""
-    pred_match = re.search(r'([A-D])', prediction.upper())
-    label_match = re.search(r'([A-D])', label.upper())
+    """Score multiple-choice answers.
+    
+    Supports up to ten options (A-J) so that both standard MMLU (A-D) and
+    MMLU-Pro (A-J) are handled correctly.
+    """
+    # Extract first occurrence of a choice letter in the valid range.
+    pred_match = re.search(r'([A-J])', prediction.upper())
+    label_match = re.search(r'([A-J])', label.upper())
     
     is_valid = pred_match is not None
     
