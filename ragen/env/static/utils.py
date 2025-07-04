@@ -92,6 +92,37 @@ def process_hotpotqa(item: Dict[str, Any]) -> Tuple[str, str]:
     
     return question, answer
 
+def process_musique(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process MuSiQue dataset item."""
+    question = item["question"]
+    answer = item["answer"]
+    return question, answer
+
+def process_mmlu_pro(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process MMLU-Pro dataset item (10 options, answer letter A-J)."""
+    question = item["question"]
+    # options column may be 'options' list or 'choices'.
+    options = item.get("options", item.get("choices"))
+    if options is None:
+        # Fallback: build empty list
+        options = []
+    formatted_question = question
+    for idx, opt in enumerate(options):
+        formatted_question += f"\n{chr(65+idx)}. {opt}"
+    # answer may be provided as letter or index
+    if "answer" in item:
+        answer_field = item["answer"]
+        if isinstance(answer_field, str):
+            answer = answer_field.strip().upper()[:1]
+        else:
+            # numeric index -> letter
+            answer = chr(65 + int(answer_field))
+    else:
+        # fallback using answer_index
+        answer_idx = int(item.get("answer_index", 0))
+        answer = chr(65 + answer_idx)
+    return formatted_question, answer
+
 # ====== Scoring Functions ======
 
 def compute_score_exact_match(prediction: str, label: str) -> Dict[str, Any]:
@@ -208,5 +239,21 @@ REGISTERD_STATIC_ENV = {
         },
         "processor": process_hotpotqa,
         "compute_score": compute_score_exact_match
+    },
+    "musique": {
+        "config": {
+            "path": "dgslibisey/MuSiQue",
+            "name": "default",
+        },
+        "processor": process_musique,
+        "compute_score": compute_score_exact_match
+    },
+    "mmlu_pro": {
+        "config": {
+            "path": "TIGER-Lab/MMLU-Pro",
+            "name": "default",
+        },
+        "processor": process_mmlu_pro,
+        "compute_score": compute_score_multiple_choice
     }
 }
