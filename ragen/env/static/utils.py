@@ -284,10 +284,12 @@ REGISTERD_STATIC_ENV = {
     },
     "math": {
         "config": {
-            "path": "competition_math/MATH",
+            "path": "EleutherAI/hendrycks_math",
+            "name": "algebra",  # 默认主题，可以通过配置覆盖
         },
         "processor": process_math,
-        "compute_score": compute_score_numeric
+        "compute_score": compute_score_numeric,
+        "available_subjects": ["algebra", "counting_and_probability", "geometry", "intermediate_algebra", "number_theory", "prealgebra", "precalculus"]
     },
     "humaneval": {
         "config": {
@@ -380,5 +382,23 @@ for _sub in MMLU_REDUX_SUBJECTS:
             },
             "processor": process_mmlu,
             "compute_score": compute_score_multiple_choice,
+        }
+# -----------------------------------------------------------------------
+
+# ----------------- Auto-register all MATH subsets -----------------
+MATH_SUBJECTS = [
+    "algebra", "counting_and_probability", "geometry", 
+    "intermediate_algebra", "number_theory", "prealgebra", "precalculus"
+]
+for _sub in MATH_SUBJECTS:
+    _key = f"math_{_sub}"
+    if _key not in REGISTERD_STATIC_ENV:
+        REGISTERD_STATIC_ENV[_key] = {
+            "config": {
+                "path": "EleutherAI/hendrycks_math",
+                "name": _sub,
+            },
+            "processor": process_math,
+            "compute_score": compute_score_numeric,
         }
 # -----------------------------------------------------------------------
