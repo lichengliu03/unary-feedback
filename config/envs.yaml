@@ -180,3 +180,67 @@ custom_envs:
     env_config:
       dataset_name: concurrentqa
 
+  MMLURedux:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering multiple-choice academic questions. Provide the correct option letter."
+    max_tokens: 200
+    env_config:
+      dataset_name: mmlu_redux
+
+  GPQA:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering physics multiple-choice questions. Provide the correct option letter."
+    max_tokens: 200
+    env_config:
+      dataset_name: gpqa
+
+  MATH:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are solving mathematics competition problems."
+    max_tokens: 200
+    env_config:
+      dataset_name: math
+
+  HumanEval:
+    env_type: static
+    max_actions_per_traj: 1
+    env_instruction: "You are writing Python functions to pass given unit tests."
+    max_tokens: 512
+    env_config:
+      dataset_name: humaneval
+
+  MBPP:
+    env_type: static
+    max_actions_per_traj: 1
+    env_instruction: "You are writing Python functions to pass provided unit tests."
+    max_tokens: 512
+    env_config:
+      dataset_name: mbpp
+
+  MultiPLE:
+    env_type: static
+    max_actions_per_traj: 1
+    env_instruction: "You are writing programs in multiple languages to satisfy tests."
+    max_tokens: 512
+    env_config:
+      dataset_name: multipl_e
+
+  LiveCodeBench2305_2409:
+    env_type: static
+    max_actions_per_traj: 1
+    env_instruction: "You are writing Python code to solve tasks in the LiveCodeBench (2305-2409) benchmark."
+    max_tokens: 512
+    env_config:
+      dataset_name: livecodebench_2305_2409
+
+  LiveBench0831:
+    env_type: static
+    max_actions_per_traj: 1
+    env_instruction: "You are writing code to solve tasks in the LiveBench 0831 benchmark."
+    max_tokens: 512
+    env_config:
+      dataset_name: livebench_0831
+
