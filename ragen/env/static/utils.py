@@ -134,6 +134,32 @@ def process_concurrentqa(item: Dict[str, Any]) -> Tuple[str, str]:
         answer = ans
     return question, answer
 
+def process_math(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process MATH competition dataset item."""
+    question = item.get("problem", item.get("question", ""))
+    # solution field may contain text with boxed answer; try to extract numeric/word answer
+    answer_text = str(item.get("solution", item.get("answer", "")))
+    answer = extract_answer_from_text(answer_text)
+    return question, answer
+
+def process_humaneval(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process HumanEval code generation item."""
+    question = item.get("prompt", "")
+    answer = item.get("canonical_solution", item.get("solution", ""))
+    return question, answer
+
+def process_mbpp(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Process MBPP code generation item."""
+    question = item.get("text", item.get("prompt", ""))
+    answer = item.get("code", item.get("solution", ""))
+    return question, answer
+
+def process_generic(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Fallback processor for miscellaneous static datasets."""
+    question = item.get("question", item.get("prompt", ""))
+    answer = str(item.get("answer", item.get("solution", "")))
+    return question, answer
+
 # ====== Scoring Functions ======
 
 def compute_score_exact_match(prediction: str, label: str) -> Dict[str, Any]:
@@ -240,14 +266,64 @@ REGISTERD_STATIC_ENV = {
         "processor": process_mmlu,
         "compute_score": compute_score_multiple_choice
     },
-    # "gpqa":{
-    #     "config": {
-    #         "path": "Idavidrein/gpqa",
-    #         "name": "gpqa_main",
-    #     },
-    #     "processor": process_gpqa,
-    #     "compute_score": compute_score_exact_match
-    # }
+    "mmlu_redux": {
+        "config": {
+            "path": "edinburgh-dawg/mmlu-redux",
+            "name": "anatomy",  # 任意子集；hydra 运行时可覆盖
+        },
+        "processor": process_mmlu,
+        "compute_score": compute_score_multiple_choice
+    },
+    "gpqa": {
+        "config": {
+            "path": "Idavidrein/gpqa",
+            "name": "gpqa_main",
+        },
+        "processor": process_gpqa,
+        "compute_score": compute_score_exact_match
+    },
+    "math": {
+        "config": {
+            "path": "competition_math/MATH",
+        },
+        "processor": process_math,
+        "compute_score": compute_score_numeric
+    },
+    "humaneval": {
+        "config": {
+            "path": "openai_humaneval",
+        },
+        "processor": process_humaneval,
+        "compute_score": compute_score_exact_match
+    },
+    "mbpp": {
+        "config": {
+            "path": "mbpp",
+        },
+        "processor": process_mbpp,
+        "compute_score": compute_score_exact_match
+    },
+    "multipl_e": {
+        "config": {
+            "path": "nuprl/MultiPL-E",
+        },
+        "processor": process_generic,
+        "compute_score": compute_score_exact_match
+    },
+    "livecodebench_2305_2409": {
+        "config": {
+            "path": "LiveCodeBench/2305-2409",
+        },
+        "processor": process_generic,
+        "compute_score": compute_score_exact_match
+    },
+    "livebench_0831": {
+        "config": {
+            "path": "LiveBench/0831",
+        },
+        "processor": process_generic,
+        "compute_score": compute_score_exact_match
+    },
     "hotpotqa": {
         "config": {
             "path": "hotpotqa/hotpot_qa",
@@ -281,3 +357,28 @@ REGISTERD_STATIC_ENV = {
         "compute_score": compute_score_exact_match
     }
 }
+
+# ----------------- Auto-register all MMLU-Redux subsets -----------------
+MMLU_REDUX_SUBJECTS = [
+    "anatomy", "astronomy", "business_ethics", "clinical_knowledge",
+    "college_chemistry", "college_computer_science", "college_mathematics",
+    "college_medicine", "college_physics", "conceptual_physics",
+    "econometrics", "electrical_engineering", "formal_logic", "global_facts",
+    "high_school_chemistry", "high_school_geography", "high_school_macroeconomics",
+    "high_school_mathematics", "high_school_physics", "high_school_statistics",
+    "high_school_us_history", "human_aging", "logical_fallacies", "machine_learning",
+    "miscellaneous", "philosophy", "professional_accounting", "professional_law",
+    "public_relations", "virology"
+]
+for _sub in MMLU_REDUX_SUBJECTS:
+    _key = f"mmlu_redux_{_sub}"
+    if _key not in REGISTERD_STATIC_ENV:
+        REGISTERD_STATIC_ENV[_key] = {
+            "config": {
+                "path": "edinburgh-dawg/mmlu-redux",
+                "name": _sub,
+            },
+            "processor": process_mmlu,
+            "compute_score": compute_score_multiple_choice,
+        }
+# -----------------------------------------------------------------------
