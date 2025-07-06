@@ -206,7 +206,7 @@ custom_envs:
 
   HumanEval:
     env_type: static
-    max_actions_per_traj: 1
+    max_actions_per_traj: 5
     env_instruction: "You are writing Python functions to pass given unit tests."
     max_tokens: 512
     env_config:
@@ -214,7 +214,7 @@ custom_envs:
 
   MBPP:
     env_type: static
-    max_actions_per_traj: 1
+    max_actions_per_traj: 5
     env_instruction: "You are writing Python functions to pass provided unit tests."
     max_tokens: 512
     env_config:
@@ -222,7 +222,7 @@ custom_envs:
 
   MultiPLE:
     env_type: static
-    max_actions_per_traj: 1
+    max_actions_per_traj: 5
     env_instruction: "You are writing programs in multiple languages to satisfy tests."
     max_tokens: 512
     env_config:
@@ -230,7 +230,7 @@ custom_envs:
 
   LiveCodeBench2305_2409:
     env_type: static
-    max_actions_per_traj: 1
+    max_actions_per_traj: 5
     env_instruction: "You are writing Python code to solve tasks in the LiveCodeBench (2305-2409) benchmark."
     max_tokens: 512
     env_config:
@@ -238,7 +238,7 @@ custom_envs:
 
   LiveBench0831:
     env_type: static
-    max_actions_per_traj: 1
+    max_actions_per_traj: 5
     env_instruction: "You are writing code to solve tasks in the LiveBench 0831 benchmark."
     max_tokens: 512
     env_config:
