@@ -115,16 +115,12 @@ def get_custom_reward_fn(config):
 
 
 def add_dependency(config):
-    # 检查是否为评估模式（total_training_steps为0）
     if hasattr(config.trainer, 'total_training_steps') and config.trainer.total_training_steps == 0:
-        # 在评估模式下，确保train_batch_size至少等于ppo_mini_batch_size
-        # 使用val环境组数量替代train环境组数量来计算batch_size
         config.data.train_batch_size = max(
             config.es_manager.val.env_groups * config.es_manager.val.group_size,
             config.ppo_mini_batch_size if config.ppo_mini_batch_size is not None else 16
         )
     else:
-        # 正常训练模式下的计算
         config.data.train_batch_size = config.es_manager.train.env_groups * config.es_manager.train.group_size
     
     if config.ppo_mini_batch_size is None:
@@ -162,10 +158,7 @@ def run_ppo(config) -> None:
     print(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
     os.environ["ENSURE_CUDA_VISIBLE_DEVICES"] = os.environ.get('CUDA_VISIBLE_DEVICES', '')
     
-    # 检查是否为纯评估模式
     is_eval_only = hasattr(config.trainer, 'total_training_steps') and config.trainer.total_training_steps == 0
-    if is_eval_only:
-        print("运行纯评估模式，将优化内存使用...")
         
     if not ray.is_initialized():
         # this is for local ray cluster
@@ -190,7 +183,6 @@ class TaskRunner:
         # print initial config
         from pprint import pprint
 
-        # 检查是否为纯评估模式
         is_eval_only = hasattr(config.trainer, 'total_training_steps') and config.trainer.total_training_steps == 0
         
         # download the checkpoint from hdfs
@@ -219,16 +211,13 @@ class TaskRunner:
 
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
-        # 在评估模式下简化角色映射
         if is_eval_only:
             role_worker_mapping = {
                 Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
             }
-            # 确保关闭任何参考策略
             config.actor_rollout_ref.actor.use_ref = False
             config.actor_rollout_ref.actor.use_kl_loss = False
         else:
-            # 正常训练模式下的角色映射
             role_worker_mapping = {
                 Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
                 Role.Critic: ray.remote(CriticWorker),
@@ -245,7 +234,6 @@ class TaskRunner:
             global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         }
 
-        # 在评估模式下简化资源映射
         if is_eval_only:
             mapping = {
                 Role.ActorRollout: global_pool_id,
@@ -307,13 +295,10 @@ class TaskRunner:
             val_reward_fn=val_reward_fn
         )
         
-        # 在评估模式下优化初始化流程
         if is_eval_only:
-            print("评估模式：初始化ActorRollout worker并执行评估...")
             trainer.init_eval_only_workers()
             trainer.evaluate()
         else:
-            # 正常训练流程
             trainer.init_workers()
             trainer.init_agent_proxy()
             trainer.fit()
