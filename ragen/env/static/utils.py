@@ -269,7 +269,7 @@ REGISTERD_STATIC_ENV = {
     "mmlu_redux": {
         "config": {
             "path": "edinburgh-dawg/mmlu-redux",
-            "name": "anatomy",  # 任意子集；hydra 运行时可覆盖
+            "name": "anatomy",
         },
         "processor": process_mmlu,
         "compute_score": compute_score_multiple_choice
@@ -285,7 +285,7 @@ REGISTERD_STATIC_ENV = {
     "math": {
         "config": {
             "path": "EleutherAI/hendrycks_math",
-            "name": "algebra",  # 默认主题，可以通过配置覆盖
+            "name": "algebra", 
         },
         "processor": process_math,
         "compute_score": compute_score_numeric,
