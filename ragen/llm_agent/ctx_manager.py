@@ -285,14 +285,6 @@ class ContextManager:
                 for key, value in metrics.items()
             }
 
-
-
-
-
-
-
-
-
             metrics["response_length"] = response_length
             llm_inputs.meta_info = {"metrics": metrics}
         return llm_inputs
