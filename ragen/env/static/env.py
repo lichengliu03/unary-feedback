@@ -35,8 +35,7 @@ class StaticEnv(BaseLanguageBasedEnv):
         self.processor = REGISTERD_STATIC_ENV[self.config.dataset_name]["processor"]
         self.compute_score= REGISTERD_STATIC_ENV[self.config.dataset_name]["compute_score"]
         
-        # 保存环境当前可视化状态（文本形式）
-        self.last_observation = None  # 在reset和step中维护，用于render输出
+        self.last_observation = None
         
     def reset(self, seed=None):
         """Reset the environment and get a new question."""
@@ -50,7 +49,6 @@ class StaticEnv(BaseLanguageBasedEnv):
         # Store current image if it exists (for multimodal datasets)
         self.current_image = question_data.get("Picture", None)
         
-        # 记录当前可视化状态
         self.last_observation = self.current_question
         
         return self.current_question
@@ -74,14 +72,11 @@ class StaticEnv(BaseLanguageBasedEnv):
             "is_valid": is_valid,
         }
         
-        # 更新当前可视化状态
         self.last_observation = observation
         
         return observation, reward, done, info
 
-    # -------- 新增方法 ---------
     def render(self, mode: str = 'text'):
-        """返回环境当前的文本状态。对于静态问答环境，直接返回最近一次变动后的文本描述。"""
         return self.last_observation
     
     def get_current_image(self):
