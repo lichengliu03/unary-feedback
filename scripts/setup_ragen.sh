@@ -25,6 +25,14 @@ check_conda() {
     fi
 }
 
+# Function to accept conda terms of service
+accept_conda_tos() {
+    print_step "Accepting conda terms of service..."
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+    echo "Terms of service accepted"
+}
+
 # Colors for output
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -39,6 +47,9 @@ print_step() {
 main() {
     # Check prerequisites
     check_conda || exit 1
+    
+    # Accept conda terms of service
+    accept_conda_tos
     
     # Create and activate conda environment
     # if not exists, create it
