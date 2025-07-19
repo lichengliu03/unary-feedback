@@ -5,7 +5,7 @@ gym_sokoban
 peft
 accelerate
 codetiming
-datasets
+datasets==3.6.0
 dill
 flash-attn==2.7.4.post1
 hydra-core
