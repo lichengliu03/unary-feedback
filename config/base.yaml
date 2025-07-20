@@ -101,7 +101,7 @@ trainer:
   val_before_train: True
   n_gpus_per_node: 2
   test_freq: 10
-  save_freq: 10 # Save checkpoint every 10 steps
+  save_freq: 200 
   generations_to_log_to_wandb: 
     train: 128 # TODO: will be implemented
     val: 20
