@@ -89,7 +89,7 @@ custom_envs:
     env_type: metamathqa
     max_actions_per_traj: 10
     env_instruction: "You are solving Math problems. "
-    max_tokens: 100
+    max_tokens: 200
     env_config: null
 
   HotpotQA:
