@@ -8,6 +8,10 @@
   <a href="https://unary-feedback.github.io/">
     <img src="https://img.shields.io/badge/Project-Website-blue?logo=googlechrome&style=for-the-badge" alt="Project Homepage"/>
   </a>
+  &nbsp;
+  <a href="https://arxiv.org/abs/2507.14295">
+    <img src="https://img.shields.io/badge/View_on-arXiv-B31B1B?logo=arxiv&style=for-the-badge" alt="View on arXiv"/>
+  </a>
 </p>
 
 This project is led by the first author, who is currently applying to Ph.D. programs (Fall 2026). If you’re interested in my work, feel free to get in touch.
