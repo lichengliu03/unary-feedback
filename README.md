@@ -38,7 +38,7 @@ UFO enables effective multi-turn RL training on existing static datasets without
 
 The UFO framework transforms static single-turn datasets into multi-turn interactive training through a simple yet effective approach.
 
-<p align="center"><img src="public/flow_chart.png" width="800px" alt="UFO Framework Flow" /></p>
+<p align="center"><img src="public/fig1.png" width="800px" alt="UFO Framework Flow" /></p>
 <p align="center" style="font-size: 16px; max-width: 800px; margin: 0 auto;">
 The UFO framework flow: Static datasets are transformed into multi-turn episodes where models receive minimal feedback ("Try Again") and learn to revise their reasoning across multiple attempts.
 </p>
