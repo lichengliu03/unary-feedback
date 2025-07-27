@@ -175,6 +175,108 @@ def merge_two_ranks(rank0_path: str, rank1_path: str, output_dir: str, target_dt
     return str(out_path)
 
 
+def merge_four_ranks(rank_paths: list[str], output_dir: str, target_dtype: torch.dtype = None) -> str:
+    """Merge four TP rank checkpoints into a single safetensors file."""
+    
+    print(f"Loading 4 rank checkpoints...")
+    states = []
+    for i, path in enumerate(rank_paths):
+        print(f"Loading rank-{i} checkpoint: {path}")
+        s = torch.load(path, map_location="cpu", weights_only=False)
+        states.append(s)
+
+    def _extract_state(d):
+        if isinstance(d, dict):
+            if "model" in d:
+                return d["model"]
+            if "state_dict" in d:
+                return d["state_dict"]
+            return d
+        raise RuntimeError("Unsupported checkpoint format – expecting a dict containing 'model' or 'state_dict'.")
+
+    state_dicts = [_extract_state(s) for s in states]
+
+    dim0_keywords = [
+        "q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "wq", "wk", "wv",
+        "o_proj", "down_proj", "wo",
+        ".attention.q_proj.weight", ".attention.k_proj.weight", ".attention.v_proj.weight",
+        ".attention.o_proj.weight", ".mlp.up_proj.weight", ".mlp.gate_proj.weight", ".mlp.down_proj.weight",
+        "embed_tokens", "tok_embeddings", "lm_head",
+    ]
+    dim1_keywords: list[str] = []
+
+    def _needs_concat(name: str) -> int:
+        """Return dim along which to concat, or -1 if no concat needed."""
+        for kw in dim0_keywords:
+            if kw in name:
+                return 0
+        for kw in dim1_keywords:
+            if kw in name:
+                return 1
+        return 0
+
+    def _prepare(t: torch.Tensor) -> torch.Tensor:
+        # unwrap Parameter / DTensor / meta → cpu contiguous tensor
+        if isinstance(t, torch.nn.Parameter):
+            t = t.data
+        if hasattr(t, "_local_tensor"):
+            t = t._local_tensor
+        elif "DTensor" in str(type(t)):
+            try:
+                t = t.to_local()
+            except Exception:
+                pass
+        if t.device.type == "meta":
+            t = torch.zeros(t.shape, dtype=t.dtype)
+        return t.detach().cpu().contiguous()
+
+    merged_state: Dict[str, torch.Tensor] = {}
+
+    # Get all keys from first rank
+    for key in state_dicts[0].keys():
+        tensors = []
+        
+        # Collect tensors from all ranks
+        for i, sd in enumerate(state_dicts):
+            if key not in sd:
+                print(f"⚠️  Key {key} missing in rank {i}, skipping concatenation")
+                break
+            t = _prepare(sd[key])
+            tensors.append(t)
+        
+        if len(tensors) != 4:
+            # Use tensor from rank 0 if not all ranks have this key
+            merged_state[key] = tensors[0] if tensors else None
+            continue
+
+        # Check if all tensors are identical (like biases)
+        all_equal = all(torch.equal(tensors[0], t) for t in tensors[1:])
+        if all_equal:
+            merged_state[key] = tensors[0]
+            continue
+
+        # Concatenate along appropriate dimension
+        dim = _needs_concat(key)
+        try:
+            merged_tensor = torch.cat(tensors, dim=dim)
+            merged_state[key] = merged_tensor
+        except Exception as e:
+            print(f"⚠️  Failed to concat {key} along dim {dim}: {e}. Using rank-0 tensor only.")
+            merged_state[key] = tensors[0]
+
+    if target_dtype:
+        for key in merged_state:
+            merged_state[key] = merged_state[key].to(target_dtype)
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / "model.safetensors"
+    print(f"Saving merged safetensors: {out_path}")
+    save_file(merged_state, str(out_path))
+    print("Done.")
+    return str(out_path)
+
+
 # -------------------------------------------------------------------------------------
 # SPLIT logic
 # -------------------------------------------------------------------------------------
