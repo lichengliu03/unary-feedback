@@ -103,19 +103,6 @@ def compute_gae_advantage_return(token_level_rewards: torch.Tensor, values: torc
         advantages = torch.stack(advantages_reversed[::-1], dim=1)
 
         returns = advantages + values
-        
-        # Safety check: Ensure eos_mask is not all zeros, preventing Qwen->Llama switching issues
-        if eos_mask.sum() == 0:
-            print(f"[WARNING] eos_mask is all zeros, creating default mask to avoid crashes. Shape: {eos_mask.shape}")
-            # Create a conservative mask: make the last few tokens valid
-            batch_size, seq_len = eos_mask.shape
-            # At least make the last token of each sequence valid
-            safe_mask[:, -1] = True
-            # If the sequence is long enough, also make the second-to-last token valid
-            if seq_len > 1:
-                safe_mask[:, -2] = True
-            eos_mask = safe_mask
-        
         advantages = verl_F.masked_whiten(advantages, eos_mask)
     return advantages, returns
 
@@ -240,19 +227,6 @@ def compute_reinforce_plus_plus_outcome_advantage(token_level_rewards: torch.Ten
             # Reset after EOS
             running_return = running_return * eos_mask[:, t]
 
-        # Safety check: ensure eos_mask is not all zeros, preventing Qwen->Llama switching issues
-        if eos_mask.sum() == 0:
-            print(f"[WARNING] eos_mask is all zeros (REINFORCE++), creating default mask to avoid crashes. Shape: {eos_mask.shape}")
-            # Create a conservative mask: make the last few tokens valid
-            batch_size, seq_len = eos_mask.shape
-            safe_mask = torch.zeros_like(eos_mask, dtype=torch.bool)
-            # Make at least the last token of each sequence valid
-            safe_mask[:, -1] = True
-            # If the sequence is long enough, also make the second-to-last token valid
-            if seq_len > 1:
-                safe_mask[:, -2] = True
-            eos_mask = safe_mask
-        
         advantages = verl_F.masked_whiten(returns, eos_mask)
         advantages = advantages * eos_mask
 
