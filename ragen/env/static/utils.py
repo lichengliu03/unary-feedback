@@ -68,8 +68,28 @@ def process_mmlu(item: Dict[str, Any]) -> Tuple[str, str]:
 def process_gpqa(item: Dict[str, Any]) -> Tuple[str, str]:
     """Process GPQA dataset item."""
     question = item["Question"]
-    answer = extract_answer_from_text(item["Correct Answer"])
-    return question, answer
+    answer = item["Correct Answer"]  # Direct answer letter (A/B/C/D)
+    
+    # Check if choices are available in the data
+    if "choices" in item:
+        choices = item["choices"]
+        # Format question with choices
+        choice_letters = ["A", "B", "C", "D"]
+        formatted_choices = []
+        for i, choice in enumerate(choices):
+            formatted_choices.append(f"({choice_letters[i]}) {choice}")
+        
+        full_question = f"{question}\n\n" + "\n".join(formatted_choices)
+    else:
+        # If no choices field, assume question already contains choices
+        full_question = question
+    
+    # Extract just the letter from answer if it contains more text
+    answer_match = re.search(r'([A-D])', answer.upper())
+    if answer_match:
+        answer = answer_match.group(1)
+    
+    return full_question, answer
 
 def process_hotpotqa(item: Dict[str, Any]) -> Tuple[str, str]:
     """Process HotpotQA dataset item."""
@@ -280,7 +300,7 @@ REGISTERD_STATIC_ENV = {
             "name": "gpqa_main",
         },
         "processor": process_gpqa,
-        "compute_score": compute_score_exact_match
+        "compute_score": compute_score_multiple_choice
     },
     "math": {
         "config": {
@@ -348,6 +368,14 @@ REGISTERD_STATIC_ENV = {
             "name": "default",
         },
         "processor": process_mmlu_pro,
+        "compute_score": compute_score_multiple_choice
+    },
+    "mmlu_stem": {
+        "config": {
+            "path": "TIGER-Lab/MMLU-STEM",
+            "name": "default",
+        },
+        "processor": process_mmlu,
         "compute_score": compute_score_multiple_choice
     },
     "concurrentqa": {
