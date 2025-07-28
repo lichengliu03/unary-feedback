@@ -9,7 +9,7 @@ datasets==3.6.0
 dill
 flash-attn==2.7.4.post1
 hydra-core
-numpy==2.0.0
+numpy
 pandas
 pybind11
 ray>=2.10
