@@ -172,6 +172,14 @@ custom_envs:
     env_config:
       dataset_name: mmlu_pro
 
+  MMLU-STEM:
+    env_type: static
+    max_actions_per_traj: 5
+    env_instruction: "You are answering STEM-focused multiple-choice academic questions. Provide the correct option letter."
+    max_tokens: 200
+    env_config:
+      dataset_name: mmlu_stem
+
   ConcurrentQA:
     env_type: static
     max_actions_per_traj: 5
