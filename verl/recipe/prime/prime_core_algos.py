@@ -70,20 +70,6 @@ def compute_rloo_advantage_return(data: verl.DataProto, eos_mask: torch.Tensor, 
         returns = (final_reward_tensor * eos_mask).flip(dims=[-1]).cumsum(dim=-1).flip(dims=[-1])
 
         advantages = returns.clone()
-        
-        # Safety check: Ensure eos_mask is not all zeros, preventing Qwen->Llama switching issues
-        if eos_mask.sum() == 0:
-            print(f"[WARNING] eos_mask is all zeros (PRIME RLOO), creating default mask to avoid crash. Shape: {eos_mask.shape}")
-            # Create a conservative mask: make the last few tokens valid
-            batch_size, seq_len = eos_mask.shape
-            safe_mask = torch.zeros_like(eos_mask, dtype=torch.bool)
-            # At least make the last token of each sequence valid
-            safe_mask[:, -1] = True
-            # If the sequence is long enough, also make the second-to-last token valid
-            if seq_len > 1:
-                safe_mask[:, -2] = True
-            eos_mask = safe_mask
-        
         advantages = verl_F.masked_whiten(advantages, eos_mask)
 
         return advantages, returns
