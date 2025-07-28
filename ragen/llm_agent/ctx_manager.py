@@ -103,12 +103,12 @@ def get_masks_and_scores(input_ids: torch.Tensor, tokenizer: AutoTokenizer, all_
     score_tensor = score_tensor[:, 1:]
     response_mask = response_mask[:, :-1]
 
-    # 最终安全检查：确保masks不是全零
+    # Final safety check: ensure masks are not all zeros
     if loss_mask.sum() == 0:
-        print(f"[WARNING] loss_mask在get_masks_and_scores中全为零！强制最后一个token有效。")
+        print(f"[WARNING] loss_mask is all zeros in get_masks_and_scores! Forcing the last token to be valid.")
         loss_mask[:, -1] = True
     if response_mask.sum() == 0:
-        print(f"[WARNING] response_mask在get_masks_and_scores中全为零！强制最后一个token有效。")
+        print(f"[WARNING] response_mask is all zeros in get_masks_and_scores! Forcing the last token to be valid.")
         response_mask[:, -1] = True
 
     return loss_mask, score_tensor, response_mask
@@ -136,11 +136,10 @@ class ContextManager:
         self.processor = processor
         self.action_sep = self.config.agent_proxy.action_sep
         self.special_token_list = ["<think>", "</think>", "<answer>", "</answer>", "<|im_start|>", "<|im_end|>"]
-        
-        # 修复Llama tokenizer的pad_token问题
+        # Fix Llama tokenizer's pad_token issue
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-            print(f"[ContextManager] 设置pad_token为eos_token: {self.tokenizer.pad_token}")
+            print(f"[ContextManager] Setting pad_token to eos_token: {self.tokenizer.pad_token}")
 
         self.es_cfg = self.config.es_manager[mode]
         self.env_nums = {
