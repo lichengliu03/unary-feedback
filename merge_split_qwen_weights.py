@@ -350,6 +350,8 @@ def parse_args():
     m = subparsers.add_parser("merge", help="Merge rank0 & rank1 .pt into single safetensors")
     m.add_argument("--rank0", required=True, help="Path to model_world_size_*_rank_0.pt")
     m.add_argument("--rank1", required=False, help="Path to model_world_size_*_rank_1.pt (optional, only for validation)")
+    m.add_argument("--rank2", required=False, help="Path to model_world_size_*_rank_2.pt (optional, for 4-rank merge)")
+    m.add_argument("--rank3", required=False, help="Path to model_world_size_*_rank_3.pt (optional, for 4-rank merge)")
     m.add_argument("--output-dir", required=True, help="Directory to save merged safetensors & logs")
     m.add_argument("--dtype", choices=["fp32", "bf16", "fp16"], default="fp32", help="Convert tensors to this dtype before saving (default: fp32, i.e. keep original)")
 
@@ -369,7 +371,12 @@ def main():
         # determine target dtype
         dtype_map = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}
         target_dtype = dtype_map[args.dtype]
-        merge_two_ranks(args.rank0, args.rank1 or args.rank0, args.output_dir, target_dtype=target_dtype)
+        if args.rank2 and args.rank3:
+            # All 4 ranks provided
+            merge_four_ranks([args.rank0, args.rank1, args.rank2, args.rank3], args.output_dir, target_dtype=target_dtype)
+        else:
+            # Only 2 ranks or less
+            merge_two_ranks(args.rank0, args.rank1 or args.rank0, args.output_dir, target_dtype=target_dtype)
     elif args.command == "split":
         split_safetensors(args.input_model, args.output_dir, args.num_shards, args.shard_max_gb)
     else:
