@@ -22,30 +22,94 @@ register_resolvers()
 def get_masks_and_scores(input_ids: torch.Tensor, tokenizer: AutoTokenizer, all_scores: List[List[float]] = None, use_turn_scores: bool = False):
     """
     input_ids: shape (bsz, seq_len)
-    Get loss mask that only learns between <|im_start|>assistant and <|im_end|>. Currently only supports qwen.
-    NOTE: important! This assumes that the input_ids starts with system and then user & assistant in alternative ways
+    Get loss mask for assistant responses. Supports both Qwen and Llama formats.
+    NOTE: This assumes that the input_ids contains alternating user and assistant turns
     """
-    special_token = tokenizer.encode("<|im_start|>")[0]
-    turn_starts = torch.where(input_ids == special_token, 1, 0)
-    turn_indicators = torch.cumsum(turn_starts, dim=-1)
-    response_mask = (turn_indicators % 2 == 1) & (turn_indicators > 1) # only learns all assistant turns
-    loss_mask = (turn_indicators > 1) # learns everything after system prompt
-    # loss_mask = response_mask
+    # Detect model type and set appropriate tokens
+    model_name = getattr(tokenizer, 'name_or_path', '').lower()
+    
+    if 'qwen' in model_name:
+        # Qwen format: <|im_start|>assistant ... <|im_end|>
+        try:
+            special_token = tokenizer.encode("<|im_start|>")[0]
+            reward_token = tokenizer.encode("<|im_end|>")[0]
+            use_qwen_format = True
+        except:
+            use_qwen_format = False
+    else:
+        use_qwen_format = False
+    
+    if use_qwen_format:
+        # Original Qwen logic
+        turn_starts = torch.where(input_ids == special_token, 1, 0)
+        turn_indicators = torch.cumsum(turn_starts, dim=-1)
+        response_mask = (turn_indicators % 2 == 1) & (turn_indicators > 1) # only learns all assistant turns
+        loss_mask = (turn_indicators > 1) # learns everything after system prompt
+    else:
+        # Fallback for Llama and other models: create simple masks based on sequence structure
+        # Assume the last portion of the sequence is the assistant response
+        batch_size, seq_len = input_ids.shape
+        
+        # For Llama, we'll mask everything as valid for learning (conservative approach)
+        # This avoids the "all zeros" mask issue
+        loss_mask = torch.ones_like(input_ids, dtype=torch.bool)
+        response_mask = torch.ones_like(input_ids, dtype=torch.bool)
+        
+        # Only mask out padding tokens if they exist
+        if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
+            pad_mask = (input_ids != tokenizer.pad_token_id)
+            loss_mask = loss_mask & pad_mask
+            response_mask = response_mask & pad_mask
+        
+        # Try to identify EOS tokens for better masking
+        eos_candidates = []
+        if hasattr(tokenizer, 'eos_token_id') and tokenizer.eos_token_id is not None:
+            eos_candidates.append(tokenizer.eos_token_id)
+        
+        # For Llama, also check for <|end_of_text|>
+        try:
+            eot_token = tokenizer.encode("<|end_of_text|>", add_special_tokens=False)[0]
+            eos_candidates.append(eot_token)
+        except:
+            pass
+            
+        # Mask out tokens after EOS
+        for eos_token in eos_candidates:
+            eos_positions = (input_ids == eos_token)
+            for batch_idx in range(batch_size):
+                eos_idx = torch.where(eos_positions[batch_idx])[0]
+                if len(eos_idx) > 0:
+                    first_eos = eos_idx[0].item()
+                    # Mask out everything after first EOS (exclusive)
+                    loss_mask[batch_idx, first_eos+1:] = False
+                    response_mask[batch_idx, first_eos+1:] = False
 
-    reward_token = tokenizer.encode("<|im_end|>")[0]
+    # Handle rewards
     score_tensor = torch.zeros_like(input_ids, dtype=torch.float32)
-    if use_turn_scores:
+    if use_turn_scores and use_qwen_format:
+        # Only use turn-based scoring for Qwen format
         for idx, scores in enumerate(list(zip(*all_scores))):
             scores = torch.tensor(scores, dtype=torch.float32)
             turn_indicator = idx * 2 + 3 # 0: pad. 1: system. 2+2n: user. 3+2n: assistant
             reward_position = (input_ids == reward_token) & (turn_indicators == turn_indicator)
             score_tensor[reward_position] = scores
     else:
+        # Place rewards at the end of sequences
         scores = [sum(i) for i in all_scores]
         score_tensor[:, -1] = torch.tensor(scores, dtype=torch.float32)
-    loss_mask = loss_mask[:, :-1] # remove the last token
-    score_tensor = score_tensor[:, 1:] # remove the first token
+    
+    # Remove last token from masks and first token from scores (standard RLHF practice)
+    loss_mask = loss_mask[:, :-1]
+    score_tensor = score_tensor[:, 1:]
     response_mask = response_mask[:, :-1]
+
+    # 最终安全检查：确保masks不是全零
+    if loss_mask.sum() == 0:
+        print(f"[WARNING] loss_mask在get_masks_and_scores中全为零！强制最后一个token有效。")
+        loss_mask[:, -1] = True
+    if response_mask.sum() == 0:
+        print(f"[WARNING] response_mask在get_masks_and_scores中全为零！强制最后一个token有效。")
+        response_mask[:, -1] = True
 
     return loss_mask, score_tensor, response_mask
 
@@ -72,6 +136,11 @@ class ContextManager:
         self.processor = processor
         self.action_sep = self.config.agent_proxy.action_sep
         self.special_token_list = ["<think>", "</think>", "<answer>", "</answer>", "<|im_start|>", "<|im_end|>"]
+        
+        # 修复Llama tokenizer的pad_token问题
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            print(f"[ContextManager] 设置pad_token为eos_token: {self.tokenizer.pad_token}")
 
         self.es_cfg = self.config.es_manager[mode]
         self.env_nums = {
@@ -267,6 +336,7 @@ class ContextManager:
             llm_inputs.batch["loss_mask"] = loss_mask # remove the first token
             llm_inputs.batch["rm_scores"] = normalized_score_tensor # remove the first token
             llm_inputs.batch["original_rm_scores"] = score_tensor # remove the first token
+            llm_inputs.batch["response_mask"] = response_mask # add response_mask for training
         llm_inputs.non_tensor_batch = {
             "env_ids": np.array([env_output["env_id"] for env_output in env_outputs], dtype=object),
             "group_ids": np.array([env_output["group_id"] for env_output in env_outputs], dtype=object),
