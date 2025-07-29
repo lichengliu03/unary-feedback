@@ -175,10 +175,11 @@ def merge_two_ranks(rank0_path: str, rank1_path: str, output_dir: str, target_dt
     return str(out_path)
 
 
-def merge_four_ranks(rank_paths: list[str], output_dir: str, target_dtype: torch.dtype = None) -> str:
-    """Merge four TP rank checkpoints into a single safetensors file."""
+def merge_multiple_ranks(rank_paths: list[str], output_dir: str, target_dtype: torch.dtype = None) -> str:
+    """Merge multiple TP rank checkpoints into a single safetensors file."""
     
-    print(f"Loading 4 rank checkpoints...")
+    num_ranks = len(rank_paths)
+    print(f"Loading {num_ranks} rank checkpoints...")
     states = []
     for i, path in enumerate(rank_paths):
         print(f"Loading rank-{i} checkpoint: {path}")
@@ -244,7 +245,7 @@ def merge_four_ranks(rank_paths: list[str], output_dir: str, target_dtype: torch
             t = _prepare(sd[key])
             tensors.append(t)
         
-        if len(tensors) != 4:
+        if len(tensors) != num_ranks:
             # Use tensor from rank 0 if not all ranks have this key
             merged_state[key] = tensors[0] if tensors else None
             continue
@@ -350,8 +351,12 @@ def parse_args():
     m = subparsers.add_parser("merge", help="Merge rank0 & rank1 .pt into single safetensors")
     m.add_argument("--rank0", required=True, help="Path to model_world_size_*_rank_0.pt")
     m.add_argument("--rank1", required=False, help="Path to model_world_size_*_rank_1.pt (optional, only for validation)")
-    m.add_argument("--rank2", required=False, help="Path to model_world_size_*_rank_2.pt (optional, for 4-rank merge)")
-    m.add_argument("--rank3", required=False, help="Path to model_world_size_*_rank_3.pt (optional, for 4-rank merge)")
+    m.add_argument("--rank2", required=False, help="Path to model_world_size_*_rank_2.pt (optional)")
+    m.add_argument("--rank3", required=False, help="Path to model_world_size_*_rank_3.pt (optional)")
+    m.add_argument("--rank4", required=False, help="Path to model_world_size_*_rank_4.pt (optional)")
+    m.add_argument("--rank5", required=False, help="Path to model_world_size_*_rank_5.pt (optional)")
+    m.add_argument("--rank6", required=False, help="Path to model_world_size_*_rank_6.pt (optional)")
+    m.add_argument("--rank7", required=False, help="Path to model_world_size_*_rank_7.pt (optional)")
     m.add_argument("--output-dir", required=True, help="Directory to save merged safetensors & logs")
     m.add_argument("--dtype", choices=["fp32", "bf16", "fp16"], default="fp32", help="Convert tensors to this dtype before saving (default: fp32, i.e. keep original)")
 
@@ -371,11 +376,18 @@ def main():
         # determine target dtype
         dtype_map = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}
         target_dtype = dtype_map[args.dtype]
-        if args.rank2 and args.rank3:
-            # All 4 ranks provided
-            merge_four_ranks([args.rank0, args.rank1, args.rank2, args.rank3], args.output_dir, target_dtype=target_dtype)
+        # Collect all provided rank paths
+        rank_paths = [args.rank0]
+        for i in range(1, 8):
+            rank_arg = getattr(args, f'rank{i}', None)
+            if rank_arg:
+                rank_paths.append(rank_arg)
+        
+        if len(rank_paths) > 2:
+            # Multiple ranks (3+)
+            merge_multiple_ranks(rank_paths, args.output_dir, target_dtype=target_dtype)
         else:
-            # Only 2 ranks or less
+            # Only 1-2 ranks
             merge_two_ranks(args.rank0, args.rank1 or args.rank0, args.output_dir, target_dtype=target_dtype)
     elif args.command == "split":
         split_safetensors(args.input_model, args.output_dir, args.num_shards, args.shard_max_gb)
