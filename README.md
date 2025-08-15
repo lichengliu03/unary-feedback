@@ -14,8 +14,6 @@
   </a>
 </p>
 
-This project is led by the first author, who is currently applying to Ph.D. programs (Fall 2026). If you’re interested in my work, feel free to get in touch.
-
 ## Overview
 
 **"Let's Try Again"** addresses a critical gap in language model training: while single-turn reinforcement learning (RL) improves reasoning, these models fail in **multi-turn interactive scenarios**, often repeating the same wrong answers despite feedback.
