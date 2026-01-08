@@ -33,8 +33,7 @@ import time
 
 WorkerType = Type[Worker]
 
-from verl.trainer.ppo.ray_trainer import Role, AdvantageEstimator, ResourcePoolManager, compute_advantage, compute_response_mask
-from verl.utils.profiler.performance import _timer
+from verl.trainer.ppo.ray_trainer import Role, AdvantageEstimator, ResourcePoolManager, compute_advantage, compute_response_mask, _timer
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer as VerlRayPPOTrainer
 
 import torch
