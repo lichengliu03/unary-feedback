@@ -1,0 +1,10 @@
+defaults:
+  - /base
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["LiveCodeBench2305_2409"]
+  val:
+    env_configs:
+      tags: ["LiveCodeBench2305_2409"]

@@ -1,0 +1,10 @@
+defaults:
+  - /base
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["ConcurrentQA"]
+  val:
+    env_configs:
+      tags: ["ConcurrentQA"]

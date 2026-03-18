@@ -1,0 +1,10 @@
+defaults:
+  - /base
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["HotpotQA"]
+  val:
+    env_configs:
+      tags: ["HotpotQA"]

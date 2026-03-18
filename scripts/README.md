@@ -1,31 +1,57 @@
 # Scripts
 
-## Directory Layout
+## Core Scripts
 
-| Subdirectory | Purpose |
+| Script | Usage |
 |---|---|
-| `training/` | SLURM job scripts for PPO training (normal, critique, no-feedback) |
-| `evaluation/` | SLURM job scripts for model evaluation |
-| `analysis/` | Plotting and visualization (feedback comparison, Pass@k curves, etc.) |
-| `utils/` | Checkpoint conversion (`convert_fsdp_to_hf.py`), data processing, tests |
-| `docs/` | Additional documentation on critique feedback, no-feedback experiments |
+| `train.sh` | `ENV=sokoban sbatch scripts/train.sh` |
+| `eval.sh` | `ENV=sokoban MODEL=<path> sbatch scripts/eval.sh` |
+| `download_data.py` | `python scripts/download_data.py` |
+| `setup_ufb.sh` | `bash scripts/setup_ufb.sh` |
 
-## Key Scripts
+## Utilities (`utils/`)
 
-**Setup**: `bash scripts/setup_ufb.sh` — creates conda env, installs dependencies, downloads data.
+| Script | Purpose |
+|---|---|
+| `convert_fsdp_to_hf.py` | Convert FSDP checkpoints to HuggingFace format |
+| `convert_out_to_json.py` | Parse SLURM `.out` logs into structured JSON |
+| `compute_conditional_success.py` | Compute conditional success rates from results |
 
-**Training** (submit via `sbatch`):
-- `training/submit_base_train.sh` — normal "Try Again" feedback
-- `training/submit_critique_train.sh` — detailed critique feedback
-- `training/submit_no_feedback_train.sh` — no feedback (ablation)
+## Training
 
-**Evaluation**: see `evaluation/` for SLURM submission scripts.
+```bash
+# Pick any environment
+ENV=metamathqa sbatch scripts/train.sh
+ENV=sokoban sbatch scripts/train.sh
 
-**Checkpoint conversion**: `python scripts/utils/convert_fsdp_to_hf.py --fsdp_checkpoint_path <path> --output_path <out>`
+# Optional overrides
+ENV=sokoban MODEL_PATH=Qwen/Qwen2.5-7B-Instruct sbatch scripts/train.sh
+ENV=metamathqa STEPS=100 sbatch scripts/train.sh
 
-## Environment Variables
+# Feedback variants
+ENV=metamathqa CONFIG=train_critique sbatch scripts/train.sh
+```
 
-Training scripts accept these overrides:
-- `MODEL_PATH` — base model (default: `meta-llama/Llama-3.2-3B-Instruct`)
-- `TRAIN_MAX_TURN` / `EVAL_MAX_TURN` — max interaction turns (default: 5)
-- `HF_TOKEN` — HuggingFace token for gated models
+## Evaluation
+
+```bash
+# Evaluate base model
+ENV=metamathqa MODEL=Qwen/Qwen2.5-3B-Instruct sbatch scripts/eval.sh
+
+# Evaluate checkpoint
+ENV=metamathqa MODEL=/path/to/checkpoint sbatch scripts/eval.sh
+
+# Override eval turns
+ENV=metamathqa MODEL=/path/to/checkpoint EVAL_TURN=10 sbatch scripts/eval.sh
+```
+
+## Workflow
+
+```
+1. Setup:     bash scripts/setup_ufb.sh
+2. Data:      python scripts/download_data.py
+3. Train:     ENV=metamathqa sbatch scripts/train.sh
+4. Evaluate:  ENV=metamathqa MODEL=<ckpt> sbatch scripts/eval.sh
+5. Convert:   python scripts/utils/convert_fsdp_to_hf.py <ckpt> <output>
+6. Analyze:   python scripts/utils/convert_out_to_json.py <slurm.out> <result.json>
+```

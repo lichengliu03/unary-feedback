@@ -38,36 +38,32 @@ Single-turn RL models lose the ability to revise reasoning across multiple turns
 ```
 unary-feedback/
 ├── ufb/                        # Core UFO framework
-│   ├── env/                    #   Environment definitions
-│   │   ├── metamathqa/         #     MetaMathQA (normal / critique / no-feedback)
-│   │   └── static/             #     Static benchmark environments (GSM8k, MATH, AIME, etc.)
+│   ├── env/                    #   13 environment types (metamathqa, sokoban, sudoku, ...)
 │   ├── llm_agent/              #   Agent proxy, context & episode-state management
 │   ├── trainer/                #   PPO trainer adapted for multi-turn episodes
 │   ├── workers/                #   Distributed FSDP actor, critic, rollout workers
 │   ├── eval.py                 #   Multi-turn evaluation with feedback (Succ@k)
 │   ├── eval_api.py             #   API-based evaluation (OpenAI, Anthropic, etc.)
-│   ├── eval_independent_passk.py  # Single-turn independent Pass@k evaluation
 │   └── utils.py                #   Shared utilities
 │
 ├── verl/                       # veRL distributed RL infrastructure (vendored)
 │
-├── configs/                    # Hydra configuration
-│   ├── base.yaml               #   Default training config (normal feedback)
-│   ├── base_critique_fixed.yaml#   Critique feedback training
-│   ├── no_feedback_eval.yaml   #   No-feedback evaluation (ablation)
-│   ├── eval.yaml               #   General evaluation config
-│   ├── envs.yaml               #   All environment definitions
+├── configs/
+│   ├── base.yaml               #   Base training config (normal feedback)
+│   ├── train_critique.yaml     #   Critique feedback training
+│   ├── train_no_feedback.yaml  #   No-feedback training (ablation)
+│   ├── envs/                   #   Per-environment configs (28 environments)
+│   ├── envs.yaml               #   Environment definitions (33 tags)
 │   └── ppo_trainer.yaml        #   PPO algorithm hyperparameters
 │
 ├── scripts/
-│   ├── training/               #   SLURM job scripts for training
-│   ├── evaluation/             #   SLURM job scripts for evaluation
-│   ├── analysis/               #   Plotting & visualization scripts
-│   ├── utils/                  #   Checkpoint conversion, data processing tools
-│   ├── docs/                   #   Additional documentation (critique, no-feedback, etc.)
-│   ├── setup_ufb.sh            #   Automated environment setup
-│   └── download_data.py        #   Dataset download script
+│   ├── train.sh                #   Training (ENV=sokoban sbatch scripts/train.sh)
+│   ├── eval.sh                 #   Evaluation (ENV=sokoban MODEL=... sbatch scripts/eval.sh)
+│   ├── download_data.py        #   Dataset download
+│   ├── setup_ufb.sh            #   Environment setup
+│   └── utils/                  #   Checkpoint conversion, data processing tools
 │
+├── external/                   # External dependencies (webshop-minimal)
 ├── train.py                    # Main training entry point
 ├── setup.py                    # Package installation (pip install -e .)
 ├── requirements.txt            # Python dependencies
@@ -88,43 +84,69 @@ For manual setup, see `scripts/setup_ufb.md`.
 
 ## Training
 
-We provide default configuration in `configs/base.yaml`, which automatically inherits from `configs/ppo_trainer.yaml` and `configs/envs.yaml`.
-
-### Quick start
+Each environment has a pre-configured YAML in `configs/envs/` with appropriate hyperparameters (response length, max turns, batch size, etc.). Just specify the environment name:
 
 ```bash
-python train.py --config-name base
+ENV=metamathqa  sbatch scripts/train.sh
+ENV=sokoban     sbatch scripts/train.sh
+ENV=countdown   sbatch scripts/train.sh
+ENV=frozen_lake sbatch scripts/train.sh
+ENV=sudoku      sbatch scripts/train.sh
+ENV=bandit      sbatch scripts/train.sh
+ENV=gsm8k       sbatch scripts/train.sh
+ENV=hotpotqa    sbatch scripts/train.sh
+ENV=webshop     sbatch scripts/train.sh
+ENV=alfworld    sbatch scripts/train.sh
+# ... see configs/envs/ for all 28 environments
 ```
 
-### SLURM cluster
+Optional overrides:
 
 ```bash
-# Normal feedback training
-sbatch scripts/training/submit_base_train.sh
+# Different model
+ENV=sokoban MODEL_PATH=Qwen/Qwen2.5-7B-Instruct sbatch scripts/train.sh
 
-# With critique feedback
-sbatch scripts/training/submit_critique_train.sh
+# Different number of training steps
+ENV=metamathqa STEPS=100 sbatch scripts/train.sh
+```
+
+### Feedback variants
+
+```bash
+# Normal feedback (default)
+ENV=metamathqa sbatch scripts/train.sh
+
+# Critique feedback
+ENV=metamathqa CONFIG=train_critique sbatch scripts/train.sh
 
 # No feedback (ablation)
-sbatch scripts/training/submit_no_feedback_train.sh
+ENV=metamathqa CONFIG=train_no_feedback sbatch scripts/train.sh
 ```
 
-### Configuration overrides
+### Available environments
 
-```bash
-python train.py --config-name base \
-    model_path=Qwen/Qwen2.5-3B-Instruct \
-    trainer.total_training_steps=200 \
-    agent_proxy.max_turn=5
-```
+| Category | Environments |
+|----------|-------------|
+| Math | `metamathqa`, `gsm8k`, `math`, `aime24`, `countdown`, `theoremqa` |
+| QA / Reasoning | `hotpotqa`, `concurrentqa`, `musique`, `gpqa` |
+| General Knowledge | `mmlu`, `mmlu_pro`, `mmlu_stem`, `mmlu_redux` |
+| Code | `humaneval`, `mbpp`, `multiple`, `livecodebench`, `livebench` |
+| Planning | `sokoban`, `frozen_lake`, `sudoku`, `spatial` |
+| Interactive | `webshop`, `alfworld`, `bandit` |
+| Formal | `lean`, `search` |
 
 ## Evaluation
 
 ```bash
-python -m ufb.eval --config-name eval
-```
+# Evaluate base model (no training)
+ENV=metamathqa MODEL=Qwen/Qwen2.5-3B-Instruct sbatch scripts/eval.sh
 
-You only need to set model and environment in `configs/eval.yaml`.
+# Evaluate a trained checkpoint
+ENV=metamathqa MODEL=/path/to/checkpoint/global_step_200 sbatch scripts/eval.sh
+
+# Evaluate on a different environment
+ENV=sokoban MODEL=/path/to/checkpoint sbatch scripts/eval.sh
+```
 
 ## Visualization
 Check `val/generations` in wandb.

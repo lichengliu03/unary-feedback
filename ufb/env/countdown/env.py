@@ -44,7 +44,11 @@ class CountdownEnv(BaseLanguageBasedEnv, gym.Env):
         assert self.render_mode == 'text'
         
     def _get_data_from_parquet(self, path):
-        df = datasets.load_dataset("parquet", data_files=path)['train'].select(range(self.config.max_instances))
+        try:
+            df = datasets.load_dataset("parquet", data_files=path)['train'].select(range(self.config.max_instances))
+        except FileNotFoundError:
+            print(f"Local file {path} not found, downloading from HuggingFace...")
+            df = datasets.load_dataset("Jiayi-Pan/Countdown-Tasks-3to4", split="train").select(range(self.config.max_instances))
         df = df.filter(lambda x: has_solution(x['nums'], x['target']))
         return df
 

@@ -1,0 +1,39 @@
+defaults:
+  - /base
+
+micro_batch_size_per_gpu: 4
+ppo_mini_batch_size: 32
+
+actor_rollout_ref:
+  actor:
+    use_kl_loss: True
+    kl_loss_coef: 0.01
+    kl_loss_type: low_var_kl
+  rollout:
+    response_length: 512
+    max_model_len: 2560
+    temperature: 1.0
+    val_kwargs:
+      temperature: 0.4
+      do_sample: True
+
+agent_proxy:
+  max_turn: 50
+  max_actions_per_turn: 1
+
+val_agent_proxy:
+  max_turn: 50
+
+es_manager:
+  train:
+    env_groups: 16
+    group_size: 8
+    env_configs:
+      tags: ["Alfworld"]
+      n_groups: [16]
+  val:
+    env_groups: 128
+    group_size: 1
+    env_configs:
+      tags: ["Alfworld"]
+      n_groups: [128]

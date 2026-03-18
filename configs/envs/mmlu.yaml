@@ -1,0 +1,10 @@
+defaults:
+  - /base
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["MMLU"]
+  val:
+    env_configs:
+      tags: ["MMLU"]

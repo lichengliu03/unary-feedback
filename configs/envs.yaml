@@ -267,3 +267,52 @@ custom_envs:
     env_config:
       dataset_name: aime24
 
+  Alfworld:
+    env_type: alfworld
+    max_actions_per_traj: 50
+    env_instruction: |
+      You are an expert agent in the ALFRED Embodied Environment.
+      Complete household tasks by navigating and interacting with objects.
+      Reason step-by-step about the current situation within <think> </think> tags.
+      Then choose an admissible action within <answer>...</answer> tags.
+    max_tokens: 512
+    env_config: null
+
+  SimpleSudoku:
+    env_type: sudoku
+    max_actions_per_traj: 20
+    env_instruction: |
+      You are solving a Sudoku puzzle. Fill in the grid so that every row, column, and 3x3 box contains the numbers 1-9 without repetition.
+      Initial cells are shown in [brackets] and cannot be modified. Empty cells are shown as dots (.).
+      Place numbers one at a time using the format: <answer>place 5 at row 2 col 3</answer> or <answer>2,3,5</answer>
+    max_tokens: 150
+    env_config:
+      grid_size: 9
+      difficulty: "easy"
+      render_format: "with_feedback"
+      show_conflicts: true
+
+  Lean:
+    env_type: lean
+    max_actions_per_traj: 30
+    env_instruction: "You are a Lean theorem prover. Given a Lean theorem statement, propose a sequence of tactics that completes the proof. Think step by step about which tactics to apply next. Provide tactics separated by '||', for example <answer>intro || simp || rfl</answer>."
+    max_tokens: 512
+    env_config: null
+
+  SearchQA:
+    env_type: search
+    max_actions_per_traj: 10
+    env_instruction: |
+      You are a search agent answering questions by searching for information.
+      Use search[your query] to find relevant documents, and finish[your answer] to submit your final answer.
+      Reason step-by-step within <think> </think> tags, then provide your action within <answer>...</answer> tags.
+    max_tokens: 300
+    env_config: null
+
+  Spatial:
+    env_type: spatial
+    max_actions_per_traj: 11
+    env_instruction: "You are navigating a room and answering spatial reasoning questions. Explore the room by moving around, then answer the question about spatial relationships."
+    max_tokens: 200
+    env_config: null
+
