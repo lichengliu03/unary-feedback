@@ -1,18 +1,13 @@
 from setuptools import setup, find_packages
-import os
-import sys
 
 setup(
-    name='ragen',
+    name='ufb',
     version='0.1',
-    package_dir={'': '.'},
-    packages=find_packages(include=['ragen']),
-    author='RAGEN Team',
-    author_email='',
-    acknowledgements='',
-    description='',
-    install_requires=[], 
-    package_data={'ragen': ['*/*.md']},
+    packages=find_packages(include=['ufb', 'ufb.*']),
+    author='UFB Team',
+    description='Unary Feedback as Observation: Multi-turn RL for Language Models',
+    install_requires=[],  # see requirements.txt
+    python_requires='>=3.10',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Science/Research',

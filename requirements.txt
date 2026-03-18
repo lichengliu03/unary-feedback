@@ -7,7 +7,7 @@ accelerate
 codetiming
 datasets==3.6.0
 dill
-flash-attn==2.7.4.post1
+# flash-attn==2.7.4.post1
 hydra-core
 numpy
 pandas
@@ -29,4 +29,4 @@ together
 anthropic
 
 # This is optional, but needs to be installed with main requirements if you want to use webshop
--r external/webshop-minimal/requirements.txt
+# -r external/webshop-minimal/requirements.txt

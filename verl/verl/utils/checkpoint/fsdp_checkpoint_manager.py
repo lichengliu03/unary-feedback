@@ -56,7 +56,9 @@ class FSDPCheckpointManager(BaseCheckpointManager):
             assert "tokenizer" in kwargs, "tokenizer or processor must be provided"
             warnings.warn("`tokenizer` is deprecated. use `processing_class` instead.", DeprecationWarning)
             processing_class = kwargs.pop("tokenizer")
-        assert "model" in checkpoint_contents and "optimizer" in checkpoint_contents and "extra" in checkpoint_contents, f"FSDPCheckpointManager must include ['model', 'hf_model', 'optimizer', 'extra'], got {checkpoint_contents}"
+        # Allow flexible checkpoint contents - can save only hf_model for eval-only checkpoints
+        if not checkpoint_contents:
+            raise ValueError("checkpoint_contents cannot be empty")
 
         super().__init__(model,
                          optimizer,
@@ -127,46 +129,65 @@ class FSDPCheckpointManager(BaseCheckpointManager):
         local_path = self.local_mkdir(local_path)
         torch.distributed.barrier()
 
-        # every rank will save its own model and optim shard
-        state_dict_cfg = ShardedStateDictConfig(offload_to_cpu=True)
-        optim_cfg = ShardedOptimStateDictConfig(offload_to_cpu=True)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            with FSDP.state_dict_type(self.model, StateDictType.SHARDED_STATE_DICT, state_dict_cfg, optim_cfg):
-                model_state_dict = self.model.state_dict()
-                if self.optimizer is not None:
-                    optimizer_state_dict = self.optimizer.state_dict()
-                else:
-                    optimizer_state_dict = None
-                if self.lr_scheduler is not None:
-                    lr_scheduler_state_dict = self.lr_scheduler.state_dict()
-                else:
-                    lr_scheduler_state_dict = None
+        # Save sharded checkpoints only if requested
+        if any(content in self.checkpoint_contents for content in ['model', 'optimizer', 'extra']):
+            # every rank will save its own model and optim shard
+            state_dict_cfg = ShardedStateDictConfig(offload_to_cpu=True)
+            optim_cfg = ShardedOptimStateDictConfig(offload_to_cpu=True)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with FSDP.state_dict_type(self.model, StateDictType.SHARDED_STATE_DICT, state_dict_cfg, optim_cfg):
+                    if 'model' in self.checkpoint_contents:
+                        model_state_dict = self.model.state_dict()
+                        model_path = os.path.join(local_path, f'model_world_size_{self.world_size}_rank_{self.rank}.pt')
+                        print(f'[rank-{self.rank}]: Saving model to {os.path.abspath(model_path)}')
+                        torch.save(model_state_dict, model_path)
 
-                extra_state_dict = {
-                    'lr_scheduler': lr_scheduler_state_dict,
-                    'rng': self.get_rng_state(),
-                }
-                model_path = os.path.join(local_path, f'model_world_size_{self.world_size}_rank_{self.rank}.pt')
-                optim_path = os.path.join(local_path, f'optim_world_size_{self.world_size}_rank_{self.rank}.pt')
-                extra_path = os.path.join(local_path, f'extra_state_world_size_{self.world_size}_rank_{self.rank}.pt')
+                    if 'optimizer' in self.checkpoint_contents:
+                        if self.optimizer is not None:
+                            optimizer_state_dict = self.optimizer.state_dict()
+                            optim_path = os.path.join(local_path, f'optim_world_size_{self.world_size}_rank_{self.rank}.pt')
+                            print(f'[rank-{self.rank}]: Saving optimizer to {os.path.abspath(optim_path)}')
+                            torch.save(optimizer_state_dict, optim_path)
 
-                print(f'[rank-{self.rank}]: Saving model to {os.path.abspath(model_path)}')
-                print(f'[rank-{self.rank}]: Saving checkpoint to {os.path.abspath(model_path)}')
-                print(f'[rank-{self.rank}]: Saving extra_state to {os.path.abspath(extra_path)}')
-                torch.save(model_state_dict, model_path)
-                torch.save(optimizer_state_dict, optim_path)  # TODO: address optimizer is None
-                torch.save(extra_state_dict, extra_path)
+                    if 'extra' in self.checkpoint_contents:
+                        if self.lr_scheduler is not None:
+                            lr_scheduler_state_dict = self.lr_scheduler.state_dict()
+                        else:
+                            lr_scheduler_state_dict = None
+                        extra_state_dict = {
+                            'lr_scheduler': lr_scheduler_state_dict,
+                            'rng': self.get_rng_state(),
+                        }
+                        extra_path = os.path.join(local_path, f'extra_state_world_size_{self.world_size}_rank_{self.rank}.pt')
+                        print(f'[rank-{self.rank}]: Saving extra_state to {os.path.abspath(extra_path)}')
+                        torch.save(extra_state_dict, extra_path)
 
-        if "hf_model" in self.checkpoint_contents:
+        if "hf_model" in self.checkpoint_contents or "hf_config" in self.checkpoint_contents:
             # wait for everyone to dump to local
             torch.distributed.barrier()
 
             if self.rank == 0:
                 hf_local_path = os.path.join(local_path, 'huggingface')
                 os.makedirs(hf_local_path, exist_ok=True)
+
+                # Save model weights only if hf_model is requested (not hf_config)
+                if "hf_model" in self.checkpoint_contents:
+                    # Collect full state dict for HuggingFace format
+                    from torch.distributed.fsdp import StateDictType as FSDPStateDictType, FullStateDictConfig
+                    full_state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+                    with FSDP.state_dict_type(self.model, FSDPStateDictType.FULL_STATE_DICT, full_state_dict_config):
+                        full_state_dict = self.model.state_dict()
+
+                    # Save model weights in HuggingFace format
+                    if full_state_dict:  # Only rank 0 has the full state dict
+                        self.model._fsdp_wrapped_module.save_pretrained(hf_local_path, state_dict=full_state_dict)
+                        print(f'[rank-{self.rank}]: Saved HuggingFace model to {os.path.abspath(hf_local_path)}')
+
+                # Always save config and tokenizer (needed for model_merger.py)
                 self.model._fsdp_wrapped_module.config.save_pretrained(hf_local_path)
                 self.processing_class.save_pretrained(hf_local_path)
+                print(f'[rank-{self.rank}]: Saved HuggingFace config and tokenizer to {os.path.abspath(hf_local_path)}')
 
         torch.distributed.barrier()
 

@@ -389,7 +389,7 @@ class RayAgentTrainer(VerlRayPPOTrainer):
 
                 if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                     # TODO: check if this is correct. Not tested yer
-                    logger.log("[NotImplemented] REMAX implementation is not tested yet in RAGEN. Exiting.")
+                    logger.log("[NotImplemented] REMAX implementation is not tested yet. Exiting.")
                     exit()
                     with _timer('gen_max', timing_raw):
                         gen_baseline_batch = deepcopy(batch)
@@ -573,7 +573,7 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                                               self.global_steps,
                                               max_ckpt_to_keep=max_actor_ckpt_to_keep)
 
-        if self.use_critic:
+        if self.use_critic and max_critic_ckpt_to_keep != 0:
             critic_local_path = os.path.join(local_global_step_folder, 'critic')
             critic_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
                 self.config.trainer.default_hdfs_dir, f'global_step_{self.global_steps}', 'critic')
@@ -581,6 +581,14 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                                            critic_remote_path,
                                            self.global_steps,
                                            max_ckpt_to_keep=max_critic_ckpt_to_keep)
+
+        # Clean up optimizer states to save space
+        import glob
+        import shutil
+        actor_optim_files = glob.glob(os.path.join(actor_local_path, 'optim_*.pt'))
+        for f in actor_optim_files:
+            os.remove(f)
+            print(f'Removed optimizer file: {f}')
 
         # latest checkpointed iteration tracker (for atomic usage)
         local_latest_checkpointed_iteration = os.path.join(self.config.trainer.default_local_dir,

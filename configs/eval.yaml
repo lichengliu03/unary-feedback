@@ -1,0 +1,33 @@
+defaults:
+  - base
+
+# Evaluation mode - disable training components
+trainer:
+  total_training_steps: 0
+  save_freq: -1
+  test_freq: 1
+
+# Use validation environment only
+es_manager:
+  train:
+    env_groups: 1
+    group_size: 1
+  val:
+    env_groups: 64
+    group_size: 1
+
+# Agent configuration for evaluation
+agent_proxy:
+  max_turn: 10
+
+# Rollout configuration for evaluation
+actor_rollout_ref:
+  rollout:
+    val_kwargs:
+      do_sample: false
+      temperature: 0.0
+    gpu_memory_utilization: 0.4
+    response_length: 256
+    max_model_len: 4096
+    load_format: safetensors
+    layered_summon: True
