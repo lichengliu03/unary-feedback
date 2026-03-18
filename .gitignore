@@ -24,6 +24,7 @@ slurm-*.err
 CLAUDE.md
 IMPROVEMENTS.md
 REFACTOR_PLAN.md
+RESEARCH.md
 
 # IDE / Editor / AI tools
 .claude/
