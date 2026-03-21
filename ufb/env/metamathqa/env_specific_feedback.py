@@ -9,10 +9,19 @@ from ufb.utils import all_seed
 from .config import MetaMathQAEnvConfig
 from collections import defaultdict
 
-class MetaMathQAEnv(BaseLanguageBasedEnv):
+
+class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
+    """
+    MetaMathQA Environment with Specific Feedback (answer-directed hint).
+
+    Instead of one-bit "Incorrect", this environment provides a directional
+    hint based on the ground truth: "The correct answer should be larger/smaller."
+    This is Level 3 in the feedback information scaling experiment.
+    """
+
     def __init__(self, config: MetaMathQAEnvConfig):
-        super(MetaMathQAEnv, self).__init__()
-        
+        super(MetaMathQAEnvSpecificFeedback, self).__init__()
+
         self.config = config
         self.dataset = load_dataset(path=self.config.dataset_path, cache_dir=self.config.cache_dir)
         self.dataset = self.dataset[self.config.split].filter(
@@ -25,20 +34,50 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
         self.render_cache = None
         self.unique_answers_count = defaultdict(int)
         self.total_valid_answers = 0
-        self._step_rewards = []  # Store per-step rewards for global penalty
+        self._step_rewards = []
         self.penalty_lambda = 0.5
         self.max_steps = 5
-        
+
     def _extract_answer(self, response):
         match = re.search(r"The answer is: (.*?)$", response, re.DOTALL)
-        print(response)
         if match:
             return match.group(1).strip()
         return None
-        
-    def reset(self,seed=None):
-        # dataset = self.dataset[self.config.split]
-        dataset = self.dataset 
+
+    def _try_parse_number(self, answer_str):
+        """Try to parse a string as a number for comparison."""
+        if answer_str is None:
+            return None
+        # Remove common formatting
+        cleaned = answer_str.strip().replace(',', '').replace('$', '').replace('%', '')
+        # Try to extract number
+        match = re.search(r'-?\d+\.?\d*', cleaned)
+        if match:
+            try:
+                return float(match.group())
+            except ValueError:
+                return None
+        return None
+
+    def _generate_specific_feedback(self, user_answer):
+        """Generate feedback with directional hint based on ground truth."""
+        user_num = self._try_parse_number(user_answer)
+        correct_num = self._try_parse_number(self.correct_answer)
+
+        if user_num is not None and correct_num is not None:
+            if user_num > correct_num:
+                return "Incorrect. The correct answer should be smaller."
+            elif user_num < correct_num:
+                return "Incorrect. The correct answer should be larger."
+            else:
+                # Numbers are equal but string comparison failed (formatting difference)
+                return "Incorrect. Your answer is close but not in the correct format."
+        else:
+            # Can't compare numerically, fall back to generic
+            return "Incorrect. Your answer does not match the expected answer."
+
+    def reset(self, seed=None):
+        dataset = self.dataset
         with all_seed(seed):
             self.current_question_idx = random.randint(0, len(dataset) - 1)
         question_data = dataset[self.current_question_idx]
@@ -46,14 +85,13 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
         self.correct_answer = self._extract_answer(question_data['response'])
         self.step_num = 0
         self.render_cache = self.current_question
-        
-        # Reset unique answer counters for the new question (per-question tracking)
+
         self.unique_answers_count = defaultdict(int)
         self.total_valid_answers = 0
         self._step_rewards = []
-        
+
         return self.render_cache
-        
+
     def step(self, action):
         is_correct, is_valid = self._check_answer(action)
         reward = 1.0 / (2 ** self.step_num) if is_correct else 0.0
@@ -67,11 +105,11 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
                 unique_answers_proportion = len(self.unique_answers_count) / self.total_valid_answers
             self.step_num += 1
             info = {
-                "action_is_valid": is_valid, 
-                "success": is_correct, 
+                "action_is_valid": is_valid,
+                "success": is_correct,
                 "per_question_unique_answers_ratio": unique_answers_proportion
             }
-        
+
         if is_correct or self.step_num >= self.max_steps:
             T = self.total_valid_answers
             E = len(self.unique_answers_count)
@@ -84,30 +122,22 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
             self.render_cache = observation
             return self.render_cache, total_reward, done, info
         else:
-            if self.config.randomize_feedback:
-                observation = random.choice(self.config.feedback_pool)
-            else:
-                observation = self.config.fixed_feedback
+            observation = self._generate_specific_feedback(action)
             done = False
             self.render_cache = observation
             return self.render_cache, reward, done, info
 
-
     def _minimal_normalize_answer(self, answer):
-        """Minimally normalize answer for unique counting - preserves different forms"""
         if answer is None:
             return ""
-        # Only remove whitespace and convert to lowercase, preserving the representation form
         return re.sub(r'\s+', '', answer.strip().lower())
 
     def _normalize_answer(self, answer):
-        """Normalize the answer for consistent counting."""
         if answer is None:
             return ""
         return re.sub(r'\s+', '', answer.strip().lower())
 
     def _check_answer(self, user_answer):
-        """Check if the user's answer matches the correct answer."""
         user_answer = user_answer.strip()
         normalized_answer = self._normalize_answer(user_answer)
         if self.correct_answer:
@@ -120,48 +150,3 @@ class MetaMathQAEnv(BaseLanguageBasedEnv):
 
     def render(self):
         return self.render_cache
-
-
-if __name__ == "__main__":
-    # Create the environment configuration
-    config = MetaMathQAEnvConfig(
-        dataset_path="meta-math/MetaMathQA",
-        cache_dir="./data",
-        split="train"
-    )
-
-    # Initialize the environment
-    env = MetaMathQAEnv(config)
-
-    # Reset the environment to get the first question
-    print("Question:")
-    question = env.reset(seed=42)
-    print(question)
-    print("\nCorrect answer (for testing purposes):")
-    print(env.correct_answer)
-
-    # Interactive loop for testing
-    while True:
-        user_answer = input("\nEnter your answer (or 'q' to quit): ")
-        if user_answer.lower() == 'q':
-            break
-
-        # Take a step in the environment with the user's answer
-        #breakpoint()
-        obs, reward, done, info = env.step(user_answer)
-
-
-        # Print the results
-        print("\nFeedback:", obs)
-        print("Reward:", reward)
-        print("Done:", done)
-        print("Info:", info)
-
-        # If the episode is done, reset the environment for a new question
-        if done:
-            print("\n--- New Question ---")
-            question = env.reset()
-            print(question)
-            print("\nCorrect answer (for testing purposes):")
-            print(env.correct_answer)
-            print(f"Proportion of unique answers so far: {info['per_question_unique_answers_ratio']:.2%}")

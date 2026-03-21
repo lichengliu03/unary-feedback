@@ -50,7 +50,7 @@ unary-feedback/
 │
 ├── configs/
 │   ├── base.yaml               #   Base training config (normal feedback)
-│   ├── train_critique.yaml     #   Critique feedback training
+│   ├── train_generic_feedback.yaml     #   Generic feedback training
 │   ├── train_no_feedback.yaml  #   No-feedback training (ablation)
 │   ├── envs/                   #   Per-environment configs (28 environments)
 │   ├── envs.yaml               #   Environment definitions (33 tags)
@@ -112,12 +112,20 @@ ENV=metamathqa STEPS=100 sbatch scripts/train.sh
 
 ### Feedback variants
 
+By default, one-bit feedback is randomly sampled from a prompt pool (e.g. "Incorrect.", "That's wrong, try again.", "Not quite right.", etc.) to prevent overfitting to specific wording. To use a fixed feedback prompt instead, set `randomize_feedback: false` in the env config.
+
 ```bash
-# Normal feedback (default)
+# Normal feedback with randomized prompt pool (default)
 ENV=metamathqa sbatch scripts/train.sh
 
-# Critique feedback
-ENV=metamathqa CONFIG=train_critique sbatch scripts/train.sh
+# Fixed feedback (ablation: single prompt "Incorrect. Please think again.")
+ENV=metamathqa sbatch scripts/train.sh  # override env_config.randomize_feedback=false
+
+# Generic feedback
+ENV=metamathqa CONFIG=train_generic_feedback sbatch scripts/train.sh
+
+# Specific feedback (answer-directed hint)
+ENV=metamathqa CONFIG=train_specific_feedback sbatch scripts/train.sh
 
 # No feedback (ablation)
 ENV=metamathqa CONFIG=train_no_feedback sbatch scripts/train.sh

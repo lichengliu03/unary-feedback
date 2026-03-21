@@ -6,10 +6,11 @@ Hydra-based configuration files. All per-environment configs inherit from `base.
 
 ```
 configs/
-├── base.yaml               # Base training config (normal "Try Again" feedback)
-├── train_critique.yaml      # Critique feedback training
-├── train_no_feedback.yaml   # No-feedback training (ablation)
-├── ppo_trainer.yaml         # PPO algorithm hyperparameters
+├── base.yaml                       # Base training config (randomized one-bit feedback, default)
+├── train_generic_feedback.yaml     # Generic feedback training (fixed self-check template)
+├── train_specific_feedback.yaml    # Specific feedback training (answer-directed hints)
+├── train_no_feedback.yaml          # No-feedback training (ablation)
+├── ppo_trainer.yaml                # PPO algorithm hyperparameters
 ├── envs.yaml                # All environment definitions (33 tags)
 └── envs/                    # Per-environment configs (28 environments)
     ├── metamathqa.yaml
@@ -39,7 +40,8 @@ ENV=sokoban sbatch scripts/train.sh
 ENV=metamathqa sbatch scripts/train.sh
 
 # Feedback variants
-ENV=metamathqa CONFIG=train_critique sbatch scripts/train.sh
+ENV=metamathqa CONFIG=train_generic_feedback sbatch scripts/train.sh
+ENV=metamathqa CONFIG=train_specific_feedback sbatch scripts/train.sh
 ENV=metamathqa CONFIG=train_no_feedback sbatch scripts/train.sh
 
 # Evaluation

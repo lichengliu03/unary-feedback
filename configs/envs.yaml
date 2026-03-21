@@ -90,10 +90,14 @@ custom_envs:
     max_actions_per_traj: 5
     env_instruction: "You are solving Math problems. Only give the final answer between <answer> and </answer>."
     max_tokens: 1000
-    env_config: null
+    env_config:
+      randomize_feedback: true
 
   MetamathQANoFeedback:
     env_type: metamathqa_no_feedback
+
+  MetamathQASpecificFeedback:
+    env_type: metamathqa_specific_feedback
     max_actions_per_traj: 5
     env_instruction: "You are solving Math problems. Only give the final answer between <answer> and </answer>."
     max_tokens: 1000

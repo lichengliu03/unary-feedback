@@ -63,7 +63,10 @@ class StaticEnv(BaseLanguageBasedEnv):
             observation = "Correct!"
             done = True
         else:
-            observation = "Incorrect. Please think again."
+            if self.config.randomize_feedback:
+                observation = random.choice(self.config.feedback_pool)
+            else:
+                observation = self.config.fixed_feedback
             done = False
             
         self.step_num += 1

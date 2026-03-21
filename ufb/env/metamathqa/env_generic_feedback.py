@@ -9,19 +9,19 @@ from ufb.utils import all_seed
 from .config import MetaMathQAEnvConfig
 from collections import defaultdict
 
-class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
+class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
     """
-    MetaMathQA Environment with Self-Critique Feedback
+    MetaMathQA Environment with Generic Feedback
 
     Instead of simple "Incorrect. Please think again.", this environment provides
-    structured critique prompts that encourage the model to:
+    structured generic feedback prompts that encourage the model to:
     1. Identify potential errors in their reasoning
     2. Reflect on common mistakes for this type of problem
     3. Consider alternative approaches
     """
 
     def __init__(self, config: MetaMathQAEnvConfig):
-        super(MetaMathQAEnvCritique, self).__init__()
+        super(MetaMathQAEnvGenericFeedback, self).__init__()
 
         self.config = config
         self.dataset = load_dataset(path=self.config.dataset_path, cache_dir=self.config.cache_dir)
@@ -36,7 +36,7 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
         self.unique_answers_count = defaultdict(int)
         self.total_valid_answers = 0
         self._step_rewards = []
-        self._previous_answers = []  # Track previous attempts for critique
+        self._previous_answers = []  # Track previous attempts for generic feedback
         self.penalty_lambda = 0.5
         self.max_steps = 5
 
@@ -47,28 +47,28 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
             return match.group(1).strip()
         return None
 
-    def _generate_critique_prompt(self, user_answer, step_num):
+    def _generate_generic feedback_prompt(self, user_answer, step_num):
         """
-        Generate a structured critique prompt based on the attempt number
+        Generate a structured generic feedback prompt based on the attempt number
         and previous answers.
         """
-        critique_prompts = []
+        generic feedback_prompts = []
 
-        # Base critique structure
-        critique_prompts.append("Your answer is incorrect.")
+        # Base generic feedback structure
+        generic feedback_prompts.append("Your answer is incorrect.")
 
         # Step-specific guidance
         if step_num == 0:
             # First attempt - encourage careful review
-            critique_prompts.append(
-                "\nBefore trying again, please critique your approach:"
+            generic feedback_prompts.append(
+                "\nBefore trying again, please generic feedback your approach:"
                 "\n1. Did you correctly identify what the problem is asking?"
                 "\n2. Are there any calculation errors in your work?"
                 "\n3. Did you use the right formula or method?"
             )
         elif step_num == 1:
             # Second attempt - compare with previous
-            critique_prompts.append(
+            generic feedback_prompts.append(
                 f"\nYour previous answer was: {self._previous_answers[-1]}"
                 "\nReflect on what might have gone wrong:"
                 "\n1. What assumptions did you make that might be incorrect?"
@@ -77,7 +77,7 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
             )
         elif step_num == 2:
             # Third attempt - deeper analysis
-            critique_prompts.append(
+            generic feedback_prompts.append(
                 f"\nYour previous attempts: {', '.join(self._previous_answers)}"
                 "\nYou've tried multiple times. Consider:"
                 "\n1. What pattern do you see in your errors?"
@@ -87,7 +87,7 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
             )
         else:
             # Later attempts - encourage systematic checking
-            critique_prompts.append(
+            generic feedback_prompts.append(
                 f"\nYou've made {step_num} attempts. Previous answers: {', '.join(self._previous_answers)}"
                 "\nSystematically review your solution:"
                 "\n1. Write out each step of your calculation explicitly"
@@ -99,15 +99,15 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
         # Add encouragement
         remaining_attempts = self.max_steps - step_num - 1
         if remaining_attempts > 0:
-            critique_prompts.append(
+            generic feedback_prompts.append(
                 f"\nYou have {remaining_attempts} attempt(s) remaining. Take your time to think carefully."
             )
         else:
-            critique_prompts.append(
+            generic feedback_prompts.append(
                 "\nThis is your last attempt. Review everything carefully before answering."
             )
 
-        return "\n".join(critique_prompts)
+        return "\n".join(generic feedback_prompts)
 
     def reset(self, seed=None):
         dataset = self.dataset
@@ -175,8 +175,8 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
             self.render_cache = observation
             return self.render_cache, total_reward, done, info
         else:
-            # Generate critique prompt instead of simple "Incorrect"
-            observation = self._generate_critique_prompt(action, self.step_num - 1)
+            # Generate generic feedback prompt instead of simple "Incorrect"
+            observation = self._generate_generic feedback_prompt(action, self.step_num - 1)
             done = False
             self.render_cache = observation
             return self.render_cache, reward, done, info
@@ -210,14 +210,14 @@ class MetaMathQAEnvCritique(BaseLanguageBasedEnv):
 
 
 if __name__ == "__main__":
-    # Test the critique environment
+    # Test the generic feedback environment
     config = MetaMathQAEnvConfig(
         dataset_path="meta-math/MetaMathQA",
         cache_dir="./data",
         split="train"
     )
 
-    env = MetaMathQAEnvCritique(config)
+    env = MetaMathQAEnvGenericFeedback(config)
 
     # Reset and test
     print("Question:")
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     print("\nCorrect answer (for testing):")
     print(env.correct_answer)
 
-    # Simulate multiple incorrect attempts to see critique prompts
+    # Simulate multiple incorrect attempts to see generic feedback prompts
     test_answers = ["10", "20", "30", "40"]
 
     for i, answer in enumerate(test_answers):

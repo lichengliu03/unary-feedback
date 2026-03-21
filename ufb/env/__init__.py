@@ -4,8 +4,9 @@ logger = logging.getLogger(__name__)
 
 # === Always available environments ===
 from .metamathqa.env import MetaMathQAEnv
-from .metamathqa.env_critique import MetaMathQAEnvCritique
+from .metamathqa.env_generic_feedback import MetaMathQAEnvGenericFeedback
 from .metamathqa.env_no_feedback import MetaMathQAEnvNoFeedback
+from .metamathqa.env_specific_feedback import MetaMathQAEnvSpecificFeedback
 from .metamathqa.config import MetaMathQAEnvConfig
 from .static.env import StaticEnv
 from .static.config import StaticEnvConfig
@@ -22,8 +23,9 @@ from .sudoku.config import SudokuEnvConfig
 
 REGISTERED_ENVS = {
     'metamathqa': MetaMathQAEnv,
-    'metamathqa_critique': MetaMathQAEnvCritique,
+    'metamathqa_generic_feedback': MetaMathQAEnvGenericFeedback,
     'metamathqa_no_feedback': MetaMathQAEnvNoFeedback,
+    'metamathqa_specific_feedback': MetaMathQAEnvSpecificFeedback,
     'static': StaticEnv,
     'sokoban': SokobanEnv,
     'bandit': BanditEnv,
@@ -34,8 +36,9 @@ REGISTERED_ENVS = {
 
 REGISTERED_ENV_CONFIGS = {
     'metamathqa': MetaMathQAEnvConfig,
-    'metamathqa_critique': MetaMathQAEnvConfig,
+    'metamathqa_generic_feedback': MetaMathQAEnvConfig,
     'metamathqa_no_feedback': MetaMathQAEnvConfig,
+    'metamathqa_specific_feedback': MetaMathQAEnvConfig,
     'static': StaticEnvConfig,
     'sokoban': SokobanEnvConfig,
     'bandit': BanditEnvConfig,

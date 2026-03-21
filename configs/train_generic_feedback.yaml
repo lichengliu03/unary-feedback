@@ -128,19 +128,19 @@ es_manager:
     # under the same group, the env config and env seed are ensured to be equal
     group_size: 16
     env_configs:
-      tags: ["MetamathQACritique"]  # ← ONLY CHANGE: Use critique environment
+      tags: ["MetamathQAGenericFeedback"]  # ← ONLY CHANGE: Use generic feedback environment
       n_groups: [8] # If not set, all env names divide nums equally. Under the same group, the env config and env seed (prompt) are equal in each generation
   val:
     env_groups: 128
     group_size: 1 # should be set to 1 because val temperature is set to 0 and same prompt leads to same output
     env_configs:
-      tags: ["MetamathQACritique"]  # ← ONLY CHANGE: Use critique environment
+      tags: ["MetamathQAGenericFeedback"]  # ← ONLY CHANGE: Use generic feedback environment
       n_groups: [128] # TODO: If not set, all env names divide nums equally. Under the same group, the env config and env seed (prompt) are equal in each generation
 
-# Add the critique environment definition (ONLY ADDITION)
+# Add the generic feedback environment definition (ONLY ADDITION)
 custom_envs:
-  MetamathQACritique:
-    env_type: metamathqa_critique
+  MetamathQAGenericFeedback:
+    env_type: metamathqa_generic_feedback
     max_actions_per_traj: 5
     env_instruction: "You are solving Math problems. Only give the final answer between <answer> and </answer>."
     max_tokens: 1000
