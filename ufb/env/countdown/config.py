@@ -1,17 +1,6 @@
 from typing import List
-from ufb.env.base import BaseEnvConfig
+from ufb.env.base import BaseEnvConfig, DEFAULT_FEEDBACK_POOL
 from dataclasses import dataclass, field
-
-DEFAULT_FEEDBACK_POOL = [
-    "Incorrect. Please think again.",
-    "That's wrong, try again.",
-    "Not quite right. Please try again.",
-    "Your answer is incorrect.",
-    "Wrong answer. Give it another try.",
-    "That is not correct. Try again.",
-    "Incorrect. Think carefully and try again.",
-    "No, that's not right. Please reconsider.",
-]
 
 @dataclass
 class CountdownEnvConfig:
