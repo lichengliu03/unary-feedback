@@ -44,3 +44,6 @@ Thumbs.db
 # Misc
 *.lock
 .env
+
+# delta server
+scripts/delta

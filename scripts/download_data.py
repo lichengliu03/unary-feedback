@@ -9,14 +9,21 @@ def main():
     os.makedirs("data", exist_ok=True)
 
     # 1. Planning envs (sokoban, frozen_lake, bandit)
-    # print("Downloading planning env data (sokoban, frozen_lake, bandit)...")
-    # snapshot_download(
-    #     repo_id="ZihanWang314/ragen-datasets",
-    #     repo_type="dataset",
-    #     local_dir="data",
-    #     local_dir_use_symlinks=False,
-    # )
-    # print("Done.\n")
+    print("Downloading planning env data (sokoban, frozen_lake, bandit)...")
+    snapshot_download(
+        repo_id="ZihanWang314/ragen-datasets",
+        repo_type="dataset",
+        local_dir="data",
+        local_dir_use_symlinks=False,
+    )
+    print("Done.\n")
+
+    # 2. Countdown (separate dataset, not in ragen-datasets)
+    print("Downloading Countdown data...")
+    os.makedirs("data/countdown", exist_ok=True)
+    url = "https://huggingface.co/datasets/Jiayi-Pan/Countdown-Tasks-3to4/resolve/main/data/train-00000-of-00001.parquet"
+    os.system(f"wget -q {url} -O data/countdown/train.parquet")
+    print("Done.\n")
 
     # 2. MetaMathQA
     print("Downloading MetaMathQA...")
