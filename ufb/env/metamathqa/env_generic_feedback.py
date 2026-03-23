@@ -1,6 +1,3 @@
-import gym
-from gym import spaces
-import numpy as np
 from datasets import load_dataset
 import re
 import random
@@ -47,28 +44,28 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
             return match.group(1).strip()
         return None
 
-    def _generate_generic feedback_prompt(self, user_answer, step_num):
+    def _generate_generic_feedback_prompt(self, user_answer, step_num):
         """
         Generate a structured generic feedback prompt based on the attempt number
         and previous answers.
         """
-        generic feedback_prompts = []
+        generic_feedback_prompts = []
 
         # Base generic feedback structure
-        generic feedback_prompts.append("Your answer is incorrect.")
+        generic_feedback_prompts.append("Your answer is incorrect.")
 
         # Step-specific guidance
         if step_num == 0:
             # First attempt - encourage careful review
-            generic feedback_prompts.append(
-                "\nBefore trying again, please generic feedback your approach:"
+            generic_feedback_prompts.append(
+                "\nBefore trying again, please review your approach:"
                 "\n1. Did you correctly identify what the problem is asking?"
                 "\n2. Are there any calculation errors in your work?"
                 "\n3. Did you use the right formula or method?"
             )
         elif step_num == 1:
             # Second attempt - compare with previous
-            generic feedback_prompts.append(
+            generic_feedback_prompts.append(
                 f"\nYour previous answer was: {self._previous_answers[-1]}"
                 "\nReflect on what might have gone wrong:"
                 "\n1. What assumptions did you make that might be incorrect?"
@@ -77,7 +74,7 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
             )
         elif step_num == 2:
             # Third attempt - deeper analysis
-            generic feedback_prompts.append(
+            generic_feedback_prompts.append(
                 f"\nYour previous attempts: {', '.join(self._previous_answers)}"
                 "\nYou've tried multiple times. Consider:"
                 "\n1. What pattern do you see in your errors?"
@@ -87,7 +84,7 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
             )
         else:
             # Later attempts - encourage systematic checking
-            generic feedback_prompts.append(
+            generic_feedback_prompts.append(
                 f"\nYou've made {step_num} attempts. Previous answers: {', '.join(self._previous_answers)}"
                 "\nSystematically review your solution:"
                 "\n1. Write out each step of your calculation explicitly"
@@ -99,15 +96,15 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
         # Add encouragement
         remaining_attempts = self.max_steps - step_num - 1
         if remaining_attempts > 0:
-            generic feedback_prompts.append(
+            generic_feedback_prompts.append(
                 f"\nYou have {remaining_attempts} attempt(s) remaining. Take your time to think carefully."
             )
         else:
-            generic feedback_prompts.append(
+            generic_feedback_prompts.append(
                 "\nThis is your last attempt. Review everything carefully before answering."
             )
 
-        return "\n".join(generic feedback_prompts)
+        return "\n".join(generic_feedback_prompts)
 
     def reset(self, seed=None):
         dataset = self.dataset
@@ -130,6 +127,11 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
     def step(self, action):
         is_correct, is_valid = self._check_answer(action)
         reward = 1.0 / (2 ** self.step_num) if is_correct else 0.0
+        info = {
+            "action_is_valid": is_valid,
+            "success": is_correct,
+            "per_question_unique_answers_ratio": 0.0
+        }
 
         if is_valid:
             minimal_normalized_action = self._minimal_normalize_answer(action)
@@ -142,20 +144,9 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
             if self.total_valid_answers > 0:
                 unique_answers_proportion = len(self.unique_answers_count) / self.total_valid_answers
 
-            info = {
-                "action_is_valid": is_valid,
-                "success": is_correct,
-                "per_question_unique_answers_ratio": unique_answers_proportion
-            }
+            info["per_question_unique_answers_ratio"] = unique_answers_proportion
 
             self.step_num += 1
-        else:
-            # Invalid answer - provide basic feedback
-            info = {
-                "action_is_valid": is_valid,
-                "success": False,
-                "per_question_unique_answers_ratio": 0.0
-            }
 
         if is_correct or self.step_num >= self.max_steps:
             # Episode done
@@ -176,7 +167,7 @@ class MetaMathQAEnvGenericFeedback(BaseLanguageBasedEnv):
             return self.render_cache, total_reward, done, info
         else:
             # Generate generic feedback prompt instead of simple "Incorrect"
-            observation = self._generate_generic feedback_prompt(action, self.step_num - 1)
+            observation = self._generate_generic_feedback_prompt(action, self.step_num - 1)
             done = False
             self.render_cache = observation
             return self.render_cache, reward, done, info
