@@ -4,6 +4,15 @@
 
 Train LLMs with RL using **unary feedback** (minimal "try again" signals) across both single-turn and multi-turn environments. The model learns to retry and improve its answers/strategies based on simple failure feedback, without receiving detailed corrections.
 
+## Recommended workflow
+
+1. Run `scripts/quick_test.sh` first.
+2. Confirm that the environment can finish 10 training steps cleanly.
+3. Check the quick-test summary log for startup cost, validation cost, and estimated per-step training time.
+4. Launch the full run with `scripts/exp1_train.sh` only after the quick test looks healthy.
+
+For new environments, `Quick test` is the recommended first checkpoint before spending time on a longer Experiment 1 run.
+
 ## Environments
 
 | Environment | Type | Retry Mechanism |
@@ -26,9 +35,31 @@ Train LLMs with RL using **unary feedback** (minimal "try again" signals) across
 - The model sees its full failed trajectory + retry feedback + fresh initial state
 - Reward decays exponentially across attempts
 
-## How to Run
+## Scripts
 
-### Local (interactive)
+### Quick test
+
+`scripts/quick_test.sh` is the lightweight entry point for:
+
+- sanity-checking a new environment before a full run
+- checking that 10 training steps complete without crashing
+- getting a coarse profiling signal for startup cost, validation cost, and per-step training time
+
+Example usage:
+
+```bash
+# Quick test on one environment
+ENV_TAGS_STR="MetamathQA" NGPUS=1 bash scripts/quick_test.sh
+
+# Quick test on multiple environments
+ENV_TAGS_STR="Countdown SimpleSokoban FrozenLake MetamathQA" NGPUS=2 bash scripts/quick_test.sh
+```
+
+### Experiment 1 train
+
+`scripts/exp1_train.sh` is the main Experiment 1 launcher. It runs the unary-feedback PPO setup used in this document.
+
+Example usage:
 
 ```bash
 # Default: MetamathQA, 2 GPUs, 200 steps
@@ -40,27 +71,31 @@ ENV_TAG=SimpleSokoban NGPUS=1 bash scripts/exp1_train.sh
 ENV_TAG=FrozenLake NGPUS=2 bash scripts/exp1_train.sh
 
 # Override other parameters
-STEPS=100 MODEL_PATH=Qwen/Qwen2.5-7B-Instruct ENV_TAG=MetamathQA bash scripts/exp1_train.sh
+ENV_TAG=MetamathQA NGPUS=1 STEPS=100 MODEL_PATH=Qwen/Qwen2.5-7B-Instruct bash scripts/exp1_train.sh
+
+# Disable checkpoint saving for short debug runs
+ENV_TAG=Countdown NGPUS=1 STEPS=10 SAVE_FREQ=-1 bash scripts/exp1_train.sh
 ```
 
-### SLURM (Delta cluster)
+What `exp1_train.sh` sets for you:
 
-```bash
-sbatch scripts/delta/exp1/metamathqa.slurm
-sbatch scripts/delta/exp1/countdown.slurm
-sbatch scripts/delta/exp1/simple_sokoban.slurm
-sbatch scripts/delta/exp1/frozenlake.slurm
-```
+- chooses `MAX_TURN=5` for single-turn environments such as `MetamathQA` and `Countdown`
+- chooses `MAX_TURN=15` for multi-turn environments such as `SimpleSokoban` and `FrozenLake`
+- uses the base PPO config and applies the Experiment 1 overrides
+- writes logs to `outputs/logs/exp1_<ENV_TAG>.log`
+- writes checkpoints to `outputs/checkpoints/exp1_<ENV_TAG>/`
+
 
 ## Configuration
 
-Key parameters in `scripts/exp1_train.sh`:
+Key environment variables in `scripts/exp1_train.sh`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `ENV_TAG` | MetamathQA | Environment to train on |
 | `NGPUS` | 2 | Number of GPUs (1 or 2) |
 | `STEPS` | 200 | Total training steps |
+| `SAVE_FREQ` | 50 | Checkpoint frequency; set `-1` to disable saves |
 | `MAX_TURN` | auto | Max turns per rollout (5 for single-turn, 15 for multi-turn) |
 | `MODEL_PATH` | Qwen/Qwen2.5-3B-Instruct | Model to train |
 
@@ -77,6 +112,7 @@ SimpleSokoban:
 
 ## Outputs
 
-- **Checkpoints**: `outputs/checkpoints/exp1_<ENV_TAG>/`
-- **Logs**: `outputs/logs/exp1_<ENV_TAG>.log`
+- **Training checkpoints**: `outputs/checkpoints/exp1_<ENV_TAG>/`
+- **Training logs**: `outputs/logs/exp1_<ENV_TAG>.log`
+- **Quick-test summary logs**: `outputs/logs/quick_test_summary_<NGPUS>gpu.log`
 - **W&B**: project `ufb_train`, experiment `exp1_<ENV_TAG>`

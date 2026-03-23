@@ -1,10 +1,10 @@
-from datasets import load_dataset
 import re
 import random
 from ufb.env.base import BaseLanguageBasedEnv
 from ufb.utils import all_seed
 from .config import MetaMathQAEnvConfig
 from collections import defaultdict
+from .dataset_utils import load_filtered_metamathqa_dataset
 
 
 class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
@@ -20,9 +20,10 @@ class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
         super(MetaMathQAEnvSpecificFeedback, self).__init__()
 
         self.config = config
-        self.dataset = load_dataset(path=self.config.dataset_path, cache_dir=self.config.cache_dir)
-        self.dataset = self.dataset[self.config.split].filter(
-            lambda example: example['type'].startswith('MATH_')
+        self.dataset = load_filtered_metamathqa_dataset(
+            self.config.dataset_path,
+            self.config.cache_dir,
+            self.config.split,
         )
         self.current_question_idx = None
         self.current_question = None
