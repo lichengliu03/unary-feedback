@@ -47,3 +47,6 @@ Thumbs.db
 
 # delta server
 scripts/delta
+
+# logs
+logs/
