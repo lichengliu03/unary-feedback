@@ -16,7 +16,7 @@ Single Process Actor
 """
 
 import itertools
-from typing import Iterable, Tuple
+from typing import Iterable, Optional, Tuple
 
 import torch
 from torch import nn
@@ -58,10 +58,13 @@ class DataParallelPPOActor(BasePPOActor):
             if self.config.get('use_torch_compile', True)  #  use torch compile by default
             else verl_F.entropy_from_logits)
 
-    def _forward_micro_batch(self, micro_batch, temperature) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _forward_micro_batch(self,
+                             micro_batch,
+                             temperature,
+                             calculate_entropy: bool = False) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
         """
         Returns: 
-            entropy: # (bs, response_len)
+            entropy: # (bs, response_len), or None when not requested
             log_probs: # (bs, response_len)
         """
         response_length = micro_batch['responses'].size(-1)
@@ -116,8 +119,9 @@ class DataParallelPPOActor(BasePPOActor):
 
                 logits_rmpad.div_(temperature)
 
-                # compute entropy
-                entropy_rmpad = self.compute_entropy_from_logits(logits_rmpad)  # ((total_nnz / sp) + pad)
+                entropy_rmpad = None
+                if calculate_entropy:
+                    entropy_rmpad = self.compute_entropy_from_logits(logits_rmpad)  # ((total_nnz / sp) + pad)
 
                 # if use_sp: ((total_nnz / sp) + pad) ; if not use_sp: (batch, seqlen)
                 log_probs = logprobs_from_logits(logits=logits_rmpad, labels=input_ids_rmpad_rolled)
@@ -126,22 +130,25 @@ class DataParallelPPOActor(BasePPOActor):
                 if self.use_ulysses_sp:
                     # gather and unpad for the ulysses sp
                     log_probs = gather_outpus_and_unpad(log_probs, gather_dim=0, unpad_dim=0, padding_size=pad_size)
-                    entropy_rmpad = gather_outpus_and_unpad(entropy_rmpad,
-                                                            gather_dim=0,
-                                                            unpad_dim=0,
-                                                            padding_size=pad_size)
+                    if calculate_entropy:
+                        entropy_rmpad = gather_outpus_and_unpad(entropy_rmpad,
+                                                                gather_dim=0,
+                                                                unpad_dim=0,
+                                                                padding_size=pad_size)
                 # pad back to (bsz, seqlen)
-                full_entropy = pad_input(hidden_states=entropy_rmpad.unsqueeze(-1),
-                                         indices=indices,
-                                         batch=batch_size,
-                                         seqlen=seqlen)
                 full_log_probs = pad_input(hidden_states=log_probs.unsqueeze(-1),
                                            indices=indices,
                                            batch=batch_size,
                                            seqlen=seqlen)
 
                 # only return response part:
-                entropy = full_entropy.squeeze(-1)[:, -response_length - 1:-1]  # (bsz, response_length)
+                entropy = None
+                if calculate_entropy:
+                    full_entropy = pad_input(hidden_states=entropy_rmpad.unsqueeze(-1),
+                                             indices=indices,
+                                             batch=batch_size,
+                                             seqlen=seqlen)
+                    entropy = full_entropy.squeeze(-1)[:, -response_length - 1:-1]  # (bsz, response_length)
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1:-1]  # (bsz, response_length)
 
             else:  # not using rmpad and no ulysses sp
@@ -154,7 +161,7 @@ class DataParallelPPOActor(BasePPOActor):
                 logits.div_(temperature)
                 logits = logits[:, -response_length - 1:-1, :]  # (bsz, response_length, vocab_size)
                 log_probs = logprobs_from_logits(logits, micro_batch['responses'])
-                entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
+                entropy = self.compute_entropy_from_logits(logits) if calculate_entropy else None  # (bsz, response_length)
 
             return entropy, log_probs
 
@@ -174,7 +181,7 @@ class DataParallelPPOActor(BasePPOActor):
             self.actor_optimizer.step()
         return grad_norm
 
-    def compute_log_prob(self, data: DataProto) -> torch.Tensor:
+    def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
 
         Args:
@@ -215,22 +222,32 @@ class DataParallelPPOActor(BasePPOActor):
             micro_batches = batch.split(micro_batch_size)
 
         log_probs_lst = []
+        entropy_lst = []
         for micro_batch in micro_batches:
             if isinstance(micro_batch, DataProto):
                 micro_batch = {**micro_batch.batch, **micro_batch.non_tensor_batch}
 
             with torch.no_grad():
-                _, log_probs = self._forward_micro_batch(micro_batch, temperature=temperature)
+                entropy, log_probs = self._forward_micro_batch(micro_batch,
+                                                               temperature=temperature,
+                                                               calculate_entropy=calculate_entropy)
             log_probs_lst.append(log_probs)
+            if calculate_entropy:
+                entropy_lst.append(entropy)
         log_probs = torch.concat(log_probs_lst, dim=0)
+        entropys = None
+        if calculate_entropy:
+            entropys = torch.concat(entropy_lst, dim=0)
 
         if use_dynamic_bsz:
             indices = list(itertools.chain.from_iterable(indices))
             assert len(indices) == log_probs.size(0), f"{len(indices)} vs. {log_probs.size()}"
             revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
             log_probs = log_probs[revert_indices]
+            if calculate_entropy:
+                entropys = entropys[revert_indices]
 
-        return log_probs
+        return log_probs, entropys
 
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
@@ -287,9 +304,12 @@ class DataParallelPPOActor(BasePPOActor):
 
                     clip_ratio = self.config.clip_ratio
                     entropy_coeff = self.config.entropy_coeff
+                    calculate_entropy = entropy_coeff != 0
 
                     # all return: (bsz, response_length)
-                    entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature)
+                    entropy, log_prob = self._forward_micro_batch(micro_batch=data,
+                                                                  temperature=temperature,
+                                                                  calculate_entropy=calculate_entropy)
 
                     pg_loss, pg_clipfrac, ppo_kl = core_algos.compute_policy_loss(old_log_prob=old_log_prob,
                                                                                   log_prob=log_prob,
@@ -297,7 +317,10 @@ class DataParallelPPOActor(BasePPOActor):
                                                                                   eos_mask=response_mask,
                                                                                   cliprange=clip_ratio)
                     # compute entropy loss from entropy
-                    entropy_loss = verl_F.masked_mean(entropy, response_mask)
+                    if calculate_entropy:
+                        entropy_loss = verl_F.masked_mean(entropy, response_mask)
+                    else:
+                        entropy_loss = log_prob.new_zeros(())
 
                     # compute policy loss
                     policy_loss = pg_loss - entropy_loss * entropy_coeff
