@@ -11,7 +11,6 @@ import random
 import numpy as np
 
 from ufb.env import REGISTERED_ENVS, REGISTERED_ENV_CONFIGS
-from ufb.env.retry_wrapper import RetryWrapper
 from ufb.utils import register_resolvers
 register_resolvers()
 
@@ -67,10 +66,7 @@ class EnvStateManager:
                 else:
                     env_config = REGISTERED_ENV_CONFIGS[env_class](**cfg_template.env_config)
                 env_obj = REGISTERED_ENVS[env_class](env_config)
-                retry_cfg = cfg_template.get('retry', None)
-                if retry_cfg is not None:
-                    env_obj = RetryWrapper(env_obj, **retry_cfg)
-                entry = {'tag': tag, 'group_id': env_id // self.group_size, 'env_id': env_id,
+                entry = {'tag': tag, 'group_id': env_id // self.group_size, 'env_id': env_id, 
                         'env': env_obj, 'config': env_config, 'status': EnvStatus(), 'max_actions_per_traj': max_actions_per_traj}
                 env_list.append(entry)
             done_groups += n_group
@@ -135,12 +131,8 @@ class EnvStateManager:
             status.num_actions += len(executed_actions)
             status.rewards.append(acc_reward) # NOTE use turn-wise acc_reward
             actions_left = max_actions_per_traj - status.num_actions
-            # RetryWrapper sets info["retry"]=True when the inner env failed
-            # but has attempts remaining. In that case, done=True (to break
-            # the action loop) but we must NOT mark the env as terminated,
-            # so it continues to the next LLM turn with the fresh puzzle.
-            if turn_done and not turn_info.get('retry', False):
-                status.terminated = True
+            if turn_done:
+                status.terminated = True # TODO check terminated definition in gymnasium
                 status.truncated = not turn_info.get('success', False)
             history = self._update_cache_history(history, next_state=obs, actions_left=actions_left, num_actions_info={
                 'actions': executed_actions, 'reward': acc_reward, 'info': turn_info,
@@ -172,16 +164,7 @@ class EnvStateManager:
                 entry['status'].terminated = True
                 turn_done = True
             self.rollout_cache[env_id]['history'] = history
-            # Handle retry: the wrapper already reset the inner env to the
-            # same puzzle. We reset the action counter so the new attempt
-            # gets a full action budget, and keep the env in env_outputs
-            # so it goes to the next LLM generation turn.
-            # Note: each retry attempt consumes LLM turns from
-            # agent_proxy.max_turn — see RetryWrapper docstring.
-            is_retry = turn_info.get('retry', False)
-            if is_retry:
-                entry['status'].num_actions = 0
-            if not turn_done or is_retry:
+            if not turn_done: # NOTE done environments are not sent for further llm generation (for efficiency)
                 env_outputs.append(self.rollout_cache[env_id])
 
         return env_outputs
