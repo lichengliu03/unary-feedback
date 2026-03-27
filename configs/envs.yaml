@@ -133,7 +133,19 @@ custom_envs:
   WebShop:
     env_type: webshop
     max_actions_per_traj: 10
-    env_instruction: "You are browsing an online shop. Based on the instruction, find the product that close to the production description. You need to read the website and decide what action to take next until buying a product. Available actions depends on the page: in the search page you can search keywords, in the search result page you can click an item url or click[next >] to navigate to next page, in the product page you can click[description] or click[features] to see the details, click[blue] or click[x-large] to choose size and colors, click[buy now] when you decided to buy the product, click[back to search] to return to search page. You should only choose action from the available actions list.  Example process: I need a gingko light and 20x20 pillow cover that is hand painted. First search[gingko light 20x20 pillow cover hand painted], answer format: <answer>search[blanket with fleece throw]</answer>. Valid answer is search[<keywords>] or click[<clickable>]."
+    env_instruction: |
+      You are browsing an online shop. Your goal is to buy one product that is close enough to the requested description within the action limit. It does not need to match perfectly.
+      Search terms should focus on the core product type and a few important attributes. Do not include details like size, color, price, or other highly specific option values in the search query.
+      Never search for more than 2 times.
+      Do not be too strict about the description. It is more important to buy a reasonably matching product within the action budget.
+      Prioritize clicking a promising product on the current page over going to the next page.
+      Almost never click[next >] more than 2 times. Almost never click[< prev] unless you are confident the right product is on a previous page.
+      If you have fewer than 3 actions left, stop exploring and buy the best product currently available to you.
+      If you are on a product page and a matching size or color option exists, click size first and then color, one at a time, before click[buy now]. If only 1 action is left, just click[buy now].
+      Never click[description] unless there is no better action available.
+      Plan your actions so that on the final turn you buy the most suitable product you have found so far.
+      You must choose only from the available actions shown in the current state.
+      Always output exactly one action in this format: <answer>search[<keywords>]</answer> or <answer>click[<clickable>]</answer>
     # env_instruction: >
     #   You are browsing an online shop. Based on the instruction, find the product 
     #   that best matches the production description. You need to iteratively take 
@@ -157,6 +169,11 @@ custom_envs:
     #   <think>I already selected color and size, now click buy now</think><answer>click[buy now]</answer>
     max_tokens: 200
     env_config: null
+    retry:
+      max_turns_per_attempt: 5   # max turns per attempt
+      max_actions_per_attempt: 10 # max actions per attempt (resets on retry)
+      max_retry_attempts: 3      # total attempts (including first)
+      reward_decay_base: 2.0
     # Use full dataset below
     # env_config:
     #   data_path: external/webshop-minimal/webshop_minimal
@@ -396,15 +413,3 @@ custom_envs:
       max_attempts: 5
       randomize_feedback: true
       reward_decay_base: 2.0
-
-  WebShopRetry:
-    env_type: webshop
-    max_actions_per_traj: 10
-    env_instruction: "You are browsing an online shop. Based on the instruction, find the product that close to the production description. You need to read the website and decide what action to take next until buying a product. Available actions depends on the page: in the search page you can search keywords, in the search result page you can click an item url or click[next >] to navigate to next page, in the product page you can click[description] or click[features] to see the details, click[blue] or click[x-large] to choose size and colors, click[buy now] when you decided to buy the product, click[back to search] to return to search page. You should only choose action from the available actions list.  Example process: I need a gingko light and 20x20 pillow cover that is hand painted. First search[gingko light 20x20 pillow cover hand painted], answer format: <answer>search[blanket with fleece throw]</answer>. Valid answer is search[<keywords>] or click[<clickable>]."
-    max_tokens: 200
-    env_config: null
-    retry:
-      max_attempts: 5
-      randomize_feedback: true
-      reward_decay_base: 2.0
-

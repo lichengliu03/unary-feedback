@@ -113,6 +113,8 @@ agent_proxy:
   max_turn: 5
   action_sep: "||"
   max_actions_per_turn: 5 # how many actions can be output at most in a single turn
+  context_window_mode: "full" # full / limited_multi_turn / single_turn
+  max_context_window: -1 # -1 keeps all available history; positive values keep the most recent turns
   use_turn_scores: False # important to GAE when applying token-level rewards to token-level advantages. If False, will take the sum of scores as the reward for the last turn.
   enable_think: True # False -> no think RL
   reward_normalization:

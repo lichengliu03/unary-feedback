@@ -111,6 +111,8 @@ class EnvStateManager:
         for cache, env in zip(rollout_cache, envs):
             next_state = self._handle_mm_state(env['env'].render())
             cache['history'] = self._update_cache_history(cache['history'], next_state=next_state, actions_left=env['max_actions_per_traj'], num_actions_info=None)
+            cache['history'][-1]['attempt_num'] = getattr(env['env'], 'attempt_num', 0)
+            cache['history'][-1]['turn_in_attempt'] = 1
 
         self.rollout_cache = rollout_cache
         return rollout_cache
@@ -155,6 +157,9 @@ class EnvStateManager:
                 'actions': executed_actions, 'reward': acc_reward, 'info': turn_info,
                 'llm_response': env_input['llm_response'], 'llm_raw_response': env_input['llm_raw_response']
             })
+            prev_entry = history[-2]
+            history[-1]['attempt_num'] = prev_entry.get('attempt_num', 0)
+            history[-1]['turn_in_attempt'] = prev_entry.get('turn_in_attempt', 1) + 1
             # filter out invalid actions
             # history = [content for content in history[:-1] if content['actions']] + [history[-1]]
             return status, history
@@ -176,15 +181,19 @@ class EnvStateManager:
 
             status, history = _log_env_state(entry['status'], self.rollout_cache[env_id]['history'], entry['env'].render(), entry['max_actions_per_traj'], executed_actions, valid_actions, acc_reward, turn_done, turn_info, env_input)
             entry['status'] = status
+            is_retry = turn_info.get('retry', False)
             # If retry was triggered mid-turn (e.g. env failure), reset action counter
-            if turn_info.get('retry', False):
+            if is_retry:
                 entry['status'].num_actions = 0
+                history[-1]['actions_left'] = entry['max_actions_per_traj']
+                history[-1]['attempt_num'] = turn_info.get('attempt_num', history[-2].get('attempt_num', 0) + 1)
+                history[-1]['turn_in_attempt'] = 1
             if entry['status'].num_actions >= entry['max_actions_per_traj'] and not turn_done:
                 entry['status'].truncated = True
                 entry['status'].terminated = True
                 turn_done = True
             # Notify retry wrapper of turn boundary (if wrapped)
-            if not turn_done and hasattr(env, 'notify_turn_end'):
+            if not turn_done and not is_retry and hasattr(env, 'notify_turn_end'):
                 retry_result = env.notify_turn_end()
                 if retry_result is not None:
                     retry_obs, retry_reward, retry_done, retry_info = retry_result
@@ -199,6 +208,10 @@ class EnvStateManager:
                     # (don't append — that would create an entry without 'reward')
                     history[-1]['state'] = self._handle_mm_state(env.render())
                     history[-1]['actions_left'] = entry['max_actions_per_traj'] - entry['status'].num_actions
+                    history[-1]['attempt_num'] = retry_info.get('attempt_num', history[-2].get('attempt_num', 0) + 1)
+                    history[-1]['turn_in_attempt'] = 1
+                    if len(history) >= 2:
+                        history[-2].setdefault('info', {}).update(retry_info)
             self.rollout_cache[env_id]['history'] = history
             # Handle retry: the wrapper already reset the inner env to the
             # same puzzle. We reset the action counter so the new attempt
@@ -206,7 +219,6 @@ class EnvStateManager:
             # so it goes to the next LLM generation turn.
             # Note: each retry attempt consumes LLM turns from
             # agent_proxy.max_turn — see RetryWrapper docstring.
-            is_retry = turn_info.get('retry', False)
             if is_retry:
                 entry['status'].num_actions = 0
             if not turn_done or is_retry:

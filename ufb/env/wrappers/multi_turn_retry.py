@@ -91,28 +91,24 @@ class MultiTurnRetryWrapper:
         decay = 1.0 / (self.reward_decay_base ** self.attempt_num)
         reward = reward * decay
 
-        # Success: pass through immediately
-        if done and info.get("success", False):
-            self.render_cache = obs
-            return obs, reward, True, info
+        # Any terminal env step ends the current attempt. Whether we continue
+        # to a new attempt depends only on the success flag of this attempt.
+        if done:
+            return self._finish_attempt(
+                obs=obs,
+                reward=reward,
+                info=info,
+                success=bool(info.get("success", False)),
+            )
 
-        # Inner env failed mid-turn (e.g. fell in hole in FrozenLake)
-        if done and not info.get("success", False):
-            if self.attempt_num + 1 < self.max_retry_attempts:
-                return self._do_retry(reward, info)
-            else:
-                self.render_cache = obs
-                info["success"] = False
-                return obs, reward, True, info
-
-        # Action budget exhausted mid-turn
+        # Budget exhaustion ends the attempt as unsuccessful.
         if self.actions_in_attempt >= self.max_actions_per_attempt:
-            if self.attempt_num + 1 < self.max_retry_attempts:
-                return self._do_retry(reward, info)
-            else:
-                self.render_cache = obs
-                info["success"] = False
-                return obs, reward, True, info
+            return self._finish_attempt(
+                obs=obs,
+                reward=reward,
+                info=info,
+                success=False,
+            )
 
         # Normal step within an attempt
         self.render_cache = obs
@@ -132,13 +128,40 @@ class MultiTurnRetryWrapper:
         self.turns_in_attempt += 1
 
         if self.turns_in_attempt >= self.max_turns_per_attempt:
-            if self.attempt_num + 1 < self.max_retry_attempts:
-                return self._do_retry(0.0, {"success": False})
-            else:
-                obs = self.render_cache
-                return obs, 0.0, True, {"success": False}
+            return self._finish_attempt(
+                obs=self.render_cache,
+                reward=0.0,
+                info={"success": False},
+                success=False,
+            )
 
         return None
+
+    def _finish_attempt(
+        self,
+        obs: Any,
+        reward: float,
+        info: Optional[Dict],
+        success: bool,
+    ) -> Tuple[Any, float, bool, Dict]:
+        """Finish the current attempt and decide whether to retry.
+
+        Retry decisions are based solely on whether the just-finished attempt
+        succeeded. Successful attempts terminate immediately; unsuccessful
+        attempts start a new attempt when retries remain.
+        """
+        info = dict(info or {})
+        info["success"] = bool(success)
+
+        if success:
+            self.render_cache = obs
+            return obs, reward, True, info
+
+        if self.attempt_num + 1 < self.max_retry_attempts:
+            return self._do_retry(reward, info)
+
+        self.render_cache = obs
+        return obs, reward, True, info
 
     def _do_retry(self, reward: float, info: Dict) -> Tuple[Any, float, bool, Dict]:
         """Reset inner env and return retry feedback + fresh initial state."""
