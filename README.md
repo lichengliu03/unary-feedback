@@ -110,6 +110,8 @@ ENV=sokoban MODEL_PATH=Qwen/Qwen2.5-7B-Instruct sbatch scripts/train.sh
 ENV=metamathqa STEPS=100 sbatch scripts/train.sh
 ```
 
+Rollout filtering presets are documented in `docs/rollout_filtering.md`.
+
 ### Feedback variants
 
 By default, one-bit feedback is randomly sampled from a prompt pool (e.g. "Incorrect.", "That's wrong, try again.", "Not quite right.", etc.) to prevent overfitting to specific wording. To use a fixed feedback prompt instead, set `randomize_feedback: false` in the env config.

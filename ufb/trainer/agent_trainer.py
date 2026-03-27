@@ -40,6 +40,7 @@ import torch
 from verl.utils.torch_functional import masked_mean
 
 from ufb.llm_agent.agent_proxy import LLMAgentProxy
+from ufb.trainer.rollout_filter import apply_rollout_filter, build_rollout_filter_config
 from ufb.utils import GenerationsLogger
 
 def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty='kl'):
@@ -325,46 +326,12 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                 scores = batch.batch['rm_scores'].sum(-1).cpu().tolist()
                 return inputs, outputs, scores
 
+            rollout_filter = build_rollout_filter_config(self.config.actor_rollout_ref.rollout)
+
             def _filter_rollout(batch):
-                """filter rollout based on in-group max - in-group mean. We want those groups to have high-quality rollouts that deviates significantly from the mean"""
-                rollout_filter_ratio = self.config.actor_rollout_ref.rollout.rollout_filter_ratio
+                """Filter rollouts using per-group reward std with configurable selection rules."""
                 num_groups, group_size = self.config.es_manager.train.env_groups, self.config.es_manager.train.group_size
-
-                rm_scores = batch.batch["original_rm_scores"].sum(dim=-1).view(num_groups, group_size)
-                in_group_std = rm_scores.std(dim=-1)
-                in_group_max = rm_scores.max(dim=-1).values
-                in_group_mean = rm_scores.mean(dim=-1)
-                if rollout_filter_ratio == 1:
-                    return batch, {"rollout/in_group_std": in_group_std.mean(), "rollout/in_group_max": in_group_max.mean(), "rollout/in_group_mean": in_group_mean.mean(), "rollout/chosen_in_group_std": in_group_std.mean(), "rollout/chosen_in_group_max": in_group_max.mean(), "rollout/chosen_in_group_mean": in_group_mean.mean()}
-
-                if self.config.actor_rollout_ref.rollout.rollout_filter_type == "std_rev":
-                    top_groups = (-in_group_std).topk(int(rollout_filter_ratio * num_groups)).indices
-                elif self.config.actor_rollout_ref.rollout.rollout_filter_type == "std":
-                    top_groups = in_group_std.topk(int(rollout_filter_ratio * num_groups)).indices
-                else:
-                    raise ValueError(f"Invalid rollout filter type: {self.config.actor_rollout_ref.rollout.rollout_filter_type}")
-
-                mask = torch.zeros(num_groups, dtype=torch.bool)
-                mask[top_groups] = True
-                mask = mask.unsqueeze(1).expand(-1, group_size).flatten()
-
-                batch.batch = batch.batch[mask]
-
-                for key, value in batch.non_tensor_batch.items():
-                    if isinstance(value, np.ndarray):
-                        batch.non_tensor_batch[key] = value[mask]
-                    else:
-                        batch.non_tensor_batch[key] = [v for v, m in zip(value, mask) if m]
-
-                metrics = {
-                    "rollout/in_group_std": in_group_std.mean(),
-                    "rollout/in_group_max": in_group_max.mean(),
-                    "rollout/in_group_mean": in_group_mean.mean(),
-                    "rollout/chosen_in_group_std": in_group_std[top_groups].mean(),
-                    "rollout/chosen_in_group_max": in_group_max[top_groups].mean(),
-                    "rollout/chosen_in_group_mean": in_group_mean[top_groups].mean()
-                }
-                return batch, metrics
+                return apply_rollout_filter(batch, num_groups=num_groups, group_size=group_size, config=rollout_filter)
 
 
             self.start_time = time.time()
