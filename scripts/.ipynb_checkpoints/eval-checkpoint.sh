@@ -35,9 +35,6 @@ export HF_TOKEN="${HF_TOKEN:-}"
 #   MODEL         - Model path or checkpoint path (REQUIRED)
 #   VAL_GROUPS    - Number of validation groups (default: 256)
 #   EVAL_TURN     - Max turns during evaluation (default: from env yaml)
-#   LOG_DIR       - Directory to save raw eval logs (default: logs/eval)
-#   OUTPUT_JSON   - Optional explicit JSON output path
-#   CONVERT_JSON  - Whether to auto-run convert_out_to_json.py (default: 1)
 # ============================================================
 
 ENV="${ENV:=metamathqa}"
@@ -49,19 +46,11 @@ CUDA_DEVICES="${CUDA_DEVICES:-0}"
 NGPUS="$(echo "${CUDA_DEVICES}" | awk -F',' '{print NF}')"
 TP_SIZE="${TP_SIZE:-1}"
 MODEL_BASENAME="$(basename -- "${MODEL}")"
-LOG_DIR="${LOG_DIR:-logs/eval}"
-CONVERT_JSON="${CONVERT_JSON:-1}"
-TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="${LOG_DIR}/eval_${ENV_TAG}_${MODEL_BASENAME}_${TIMESTAMP}.log"
-OUTPUT_JSON="${OUTPUT_JSON:-eval_results/eval_${ENV_TAG}_${MODEL_BASENAME}_${TIMESTAMP}.json}"
 
 if (( TP_SIZE > NGPUS )); then
   echo "[ERROR] TP_SIZE (${TP_SIZE}) cannot be larger than visible GPU count (${NGPUS})." >&2
   exit 1
 fi
-
-mkdir -p "${LOG_DIR}"
-mkdir -p "$(dirname "${OUTPUT_JSON}")"
 
 echo "[INFO] ============================================"
 echo "[INFO] Evaluation"
@@ -73,8 +62,6 @@ echo "[INFO] GPUs:        ${NGPUS}"
 echo "[INFO] TP size:     ${TP_SIZE}"
 echo "[INFO] Val groups:  ${VAL_GROUPS}"
 echo "[INFO] Eval turn:   ${EVAL_TURN:-<from env yaml>}"
-echo "[INFO] Log file:    ${LOG_FILE}"
-echo "[INFO] Output JSON: ${OUTPUT_JSON}"
 echo "[INFO] ============================================"
 
 # Build optional turn override
@@ -105,10 +92,4 @@ python train.py \
   actor_rollout_ref.rollout.tensor_model_parallel_size="${TP_SIZE}" \
   actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
   "${TAG_OVERRIDE[@]}" \
-  "${TURN_OVERRIDE[@]}" \
-  2>&1 | tee "${LOG_FILE}"
-
-if [[ "${CONVERT_JSON}" == "1" ]]; then
-  python scripts/utils/convert_out_to_json.py "${LOG_FILE}" "${OUTPUT_JSON}"
-  echo "[INFO] Converted eval log to JSON: ${OUTPUT_JSON}"
-fi
+  "${TURN_OVERRIDE[@]}"
