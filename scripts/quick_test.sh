@@ -11,8 +11,8 @@ mkdir -p outputs/logs
 STEPS="${STEPS:-10}"
 ESTIMATE_STEPS="${ESTIMATE_STEPS:-200}"
 NGPUS="${NGPUS:-1}"
-# ENV_TAGS_STR="${ENV_TAGS_STR:-Countdown SimpleSokoban FrozenLake MetamathQA}"
-ENV_TAGS_STR="${ENV_TAGS_STR:-MetamathQA}"
+ENV_TAGS_STR="${ENV_TAGS_STR:-SimpleSokoban FrozenLake}"
+# ENV_TAGS_STR="${ENV_TAGS_STR:-MetamathQA}"
 SUMMARY_LOG_FILE="${SUMMARY_LOG_FILE:-${PROJECT_DIR}/outputs/logs/quick_test_summary_${NGPUS}gpu.log}"
 
 read -r -a ENV_TAGS <<< "${ENV_TAGS_STR}"

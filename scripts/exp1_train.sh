@@ -87,10 +87,10 @@ python train.py \
   trainer.experiment_name="${EXPERIMENT}" \
   trainer.default_local_dir="${CKPT_DIR}" \
   model_path="${MODEL_PATH}" \
-  ppo_micro_batch_size_per_gpu=8 \
+  ppo_micro_batch_size_per_gpu=4 \
   log_prob_micro_batch_size_per_gpu=16 \
   ppo_mini_batch_size=32 \
-  actor_rollout_ref.actor.entropy_coeff=0 \
+  actor_rollout_ref.actor.entropy_coeff=0.001 \
   agent_proxy.max_turn="${MAX_TURN}" \
   val_agent_proxy.max_turn="${MAX_TURN}" \
   actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
