@@ -14,8 +14,12 @@
 | Script | Purpose |
 |---|---|
 | `convert_fsdp_to_hf.py` | Convert FSDP checkpoints to HuggingFace format |
+| `convert_and_upload_checkpoints_to_hf.py` | Convert `global_step_*/actor` checkpoints, upload to HF, and delete temp HF dirs |
 | `convert_out_to_json.py` | Parse SLURM `.out` logs into structured JSON |
+| `upload_hf_models_in_dir.py` | Upload every HF model subdirectory under a parent folder |
 | `compute_conditional_success.py` | Compute conditional success rates from results |
+
+HF upload notes: see `scripts/utils/HF_UPLOAD.md`.
 
 ## Training
 
