@@ -1,0 +1,23 @@
+{
+  "primary": {
+    "input_file": "eval_results/eval_WebShop_Qwen2.5-3B-Instruct_20260328_085641.summary.json",
+    "results": {
+      "base_model": {
+        "step": 0,
+        "pass_at_k": {
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.004,
+          "4": 0.004,
+          "5": 0.007
+        },
+        "conditional_success": {
+          "Succ@2|fail@1": 0.0,
+          "Succ@3|fail@2": 0.004,
+          "Succ@4|fail@3": 0.0,
+          "Succ@5|fail@4": 0.0030120481927710845
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+defaults:
+  - base
+
+# Override environment to use no-feedback variant
+es_manager:
+  train:
+    env_configs:
+      tags: ["MetamathQANoFeedback"]
+  val:
+    env_configs:
+      tags: ["MetamathQANoFeedback"]

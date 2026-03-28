@@ -1,0 +1,33 @@
+# @package _global_
+
+defaults:
+  - /base
+  - _self_
+
+micro_batch_size_per_gpu: 4
+ppo_mini_batch_size: 32
+
+actor_rollout_ref:
+  rollout:
+    max_model_len: 5000
+    max_num_batched_tokens: 5000
+
+agent_proxy:
+  max_turn: 5
+  max_actions_per_turn: 1
+
+val_agent_proxy:
+  max_turn: 5
+
+es_manager:
+  train:
+    env_groups: 16
+    group_size: 8
+    env_configs:
+      tags: ["SearchQA"]
+      n_groups: [16]
+  val:
+    env_groups: 256
+    env_configs:
+      tags: ["SearchQA"]
+      n_groups: [256]

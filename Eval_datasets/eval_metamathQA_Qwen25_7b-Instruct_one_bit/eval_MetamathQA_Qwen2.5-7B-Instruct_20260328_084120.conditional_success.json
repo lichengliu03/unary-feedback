@@ -1,0 +1,23 @@
+{
+  "primary": {
+    "input_file": "eval_results/eval_MetamathQA_Qwen2.5-7B-Instruct_20260328_084120.summary.json",
+    "results": {
+      "base_model": {
+        "step": 0,
+        "pass_at_k": {
+          "1": 0.563,
+          "2": 0.719,
+          "3": 0.748,
+          "4": 0.751,
+          "5": 0.759
+        },
+        "conditional_success": {
+          "Succ@2|fail@1": 0.35697940503432496,
+          "Succ@3|fail@2": 0.10320284697508905,
+          "Succ@4|fail@3": 0.011904761904761915,
+          "Succ@5|fail@4": 0.03212851405622493
+        }
+      }
+    }
+  }
+}

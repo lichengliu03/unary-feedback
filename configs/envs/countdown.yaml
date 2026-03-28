@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - /base
+  - _self_
+
+agent_proxy:
+  max_turn: 1
+  max_actions_per_turn: 1
+
+val_agent_proxy:
+  max_turn: 1
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["Countdown"]
+  val:
+    env_configs:
+      tags: ["Countdown"]

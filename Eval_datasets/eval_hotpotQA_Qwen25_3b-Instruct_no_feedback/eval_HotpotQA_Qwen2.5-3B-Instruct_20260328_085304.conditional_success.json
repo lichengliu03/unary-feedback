@@ -1,0 +1,23 @@
+{
+  "primary": {
+    "input_file": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_085304.summary.json",
+    "results": {
+      "base_model": {
+        "step": 0,
+        "pass_at_k": {
+          "1": 0.06,
+          "2": 0.062,
+          "3": 0.062,
+          "4": 0.062,
+          "5": 0.062
+        },
+        "conditional_success": {
+          "Succ@2|fail@1": 0.0021276595744680873,
+          "Succ@3|fail@2": 0.0,
+          "Succ@4|fail@3": 0.0,
+          "Succ@5|fail@4": 0.0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "base_model": {
+    "num_batches": 1,
+    "avg_success": 0.049,
+    "min_success": 0.049,
+    "max_success": 0.049,
+    "batches": [
+      {
+        "success": 0.049,
+        "num_actions": 4.749,
+        "reward": 0.036,
+        "response_length": 935.257
+      }
+    ],
+    "avg_reward": 0.036,
+    "avg_num_actions": 4.749,
+    "avg_response_length": 935.257,
+    "pass_at_k": {
+      "pass@1": 0.039,
+      "pass@2": 0.045,
+      "pass@3": 0.047,
+      "pass@4": 0.049,
+      "pass@5": 0.049
+    }
+  }
+}

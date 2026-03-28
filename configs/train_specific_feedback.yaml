@@ -1,0 +1,11 @@
+defaults:
+  - base
+
+# Override environment to use specific feedback variant (answer-directed hint)
+es_manager:
+  train:
+    env_configs:
+      tags: ["MetamathQASpecificFeedback"]
+  val:
+    env_configs:
+      tags: ["MetamathQASpecificFeedback"]

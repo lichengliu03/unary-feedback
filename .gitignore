@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+
+# Data (download via: python scripts/download_data.py)
+data/
+
+# Experiment outputs (all under outputs/, results/, wandb/)
+outputs/
+results/
+wandb/
+
+# SLURM logs
+slurm-*.out
+slurm-*.err
+
+# Internal dev files
+CLAUDE.md
+IMPROVEMENTS.md
+REFACTOR_PLAN.md
+RESEARCH.md
+PAPER.md
+PLAN.md
+scripts/analysis/
+
+# IDE / Editor / AI tools
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.lock
+.env
+
+# delta server
+scripts/delta
+
+# logs
+logs/

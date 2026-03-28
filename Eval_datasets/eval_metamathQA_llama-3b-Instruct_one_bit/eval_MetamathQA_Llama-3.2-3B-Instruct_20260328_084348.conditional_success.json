@@ -1,0 +1,23 @@
+{
+  "primary": {
+    "input_file": "eval_results/eval_MetamathQA_Llama-3.2-3B-Instruct_20260328_084348.summary.json",
+    "results": {
+      "base_model": {
+        "step": 0,
+        "pass_at_k": {
+          "1": 0.156,
+          "2": 0.241,
+          "3": 0.306,
+          "4": 0.372,
+          "5": 0.432
+        },
+        "conditional_success": {
+          "Succ@2|fail@1": 0.10071090047393365,
+          "Succ@3|fail@2": 0.08563899868247694,
+          "Succ@4|fail@3": 0.09510086455331414,
+          "Succ@5|fail@4": 0.09554140127388534
+        }
+      }
+    }
+  }
+}

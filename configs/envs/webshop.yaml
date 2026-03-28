@@ -1,0 +1,28 @@
+# @package _global_
+
+defaults:
+  - /base
+  - _self_
+
+micro_batch_size_per_gpu: 4
+ppo_mini_batch_size: 32
+
+agent_proxy:
+  max_turn: 9
+  max_actions_per_turn: 1
+
+val_agent_proxy:
+  max_turn: 9
+
+actor_rollout_ref:
+  rollout:
+    max_model_len: 14000
+    max_num_batched_tokens: 14000
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["WebShop"]
+  val:
+    env_configs:
+      tags: ["WebShop"]

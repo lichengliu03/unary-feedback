@@ -1,0 +1,789 @@
+{
+  "format_version": 1,
+  "created_at": "2026-03-28T08:53:55.360150",
+  "eval_parameters": {
+    "project_name": "ufb_eval",
+    "experiment_name": "eval_HotpotQA_Qwen2.5-3B-Instruct",
+    "env_name": "hotpotqa",
+    "env_tag": "HotpotQA",
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "validation_steps": 1,
+    "val_env_groups": 1024,
+    "val_group_size": 1,
+    "max_turn": 5,
+    "tensor_parallel_size": 1,
+    "gpu_memory_utilization": 0.75,
+    "response_length": 400,
+    "max_model_len": 8192,
+    "do_sample": true,
+    "temperature": 0.5,
+    "cuda_visible_devices": "0,1",
+    "n_gpus_per_node": 2
+  },
+  "artifacts": {
+    "detailed_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.json",
+    "params_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.params.json",
+    "summary_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.summary.json",
+    "log_file": "logs/eval/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.log"
+  },
+  "resolved_config": {
+    "data": {
+      "tokenizer": null,
+      "train_files": "~/data/rlhf/gsm8k/train.parquet",
+      "val_files": "~/data/rlhf/gsm8k/test.parquet",
+      "prompt_key": "prompt",
+      "max_prompt_length": null,
+      "max_response_length": null,
+      "train_batch_size": 1024,
+      "val_batch_size": null,
+      "return_raw_input_ids": false,
+      "return_raw_chat": false,
+      "shuffle": true,
+      "filter_overlong_prompts": false,
+      "truncation": "error",
+      "image_key": "images"
+    },
+    "actor_rollout_ref": {
+      "hybrid_engine": true,
+      "model": {
+        "path": "Qwen/Qwen2.5-3B-Instruct",
+        "external_lib": null,
+        "override_config": {},
+        "enable_gradient_checkpointing": true,
+        "use_remove_padding": false
+      },
+      "actor": {
+        "strategy": "fsdp",
+        "ppo_mini_batch_size": 16,
+        "ppo_micro_batch_size": null,
+        "ppo_micro_batch_size_per_gpu": 2,
+        "use_dynamic_bsz": false,
+        "ppo_max_token_len_per_gpu": 16384,
+        "grad_clip": 1.0,
+        "clip_ratio": 0.2,
+        "entropy_coeff": 0.001,
+        "use_kl_loss": false,
+        "use_torch_compile": true,
+        "kl_loss_coef": 0.001,
+        "kl_loss_type": "kl",
+        "ppo_epochs": 1,
+        "shuffle": false,
+        "ulysses_sequence_parallel_size": 1,
+        "checkpoint": {
+          "contents": [
+            "model",
+            "hf_model",
+            "optimizer",
+            "extra"
+          ]
+        },
+        "optim": {
+          "lr": 1e-06,
+          "lr_warmup_steps": -1,
+          "lr_warmup_steps_ratio": 0.0,
+          "min_lr_ratio": null,
+          "warmup_style": "constant",
+          "total_training_steps": 0,
+          "betas": [
+            0.9,
+            0.999
+          ]
+        },
+        "fsdp_config": {
+          "wrap_policy": {
+            "min_num_params": 0
+          },
+          "param_offload": false,
+          "optimizer_offload": false,
+          "fsdp_size": -1
+        },
+        "micro_batch_size_per_gpu": 2,
+        "use_ref": false,
+        "clip_ratio_low": 0.2,
+        "clip_ratio_high": 0.28,
+        "grpo_advantage_length_weight": false,
+        "lora": {
+          "enabled": false,
+          "rank": 64,
+          "alpha": 64,
+          "target_modules": "all-linear",
+          "local_temp_dir": "lora_temp"
+        }
+      },
+      "ref": {
+        "fsdp_config": {
+          "param_offload": false,
+          "wrap_policy": {
+            "min_num_params": 0
+          }
+        },
+        "log_prob_micro_batch_size": null,
+        "log_prob_micro_batch_size_per_gpu": 2,
+        "log_prob_use_dynamic_bsz": false,
+        "log_prob_max_token_len_per_gpu": 16384,
+        "ulysses_sequence_parallel_size": 1
+      },
+      "rollout": {
+        "name": "vllm",
+        "temperature": 1,
+        "top_k": -1,
+        "top_p": 1,
+        "use_fire_sampling": false,
+        "prompt_length": 1,
+        "response_length": 400,
+        "dtype": "bfloat16",
+        "gpu_memory_utilization": 0.75,
+        "ignore_eos": false,
+        "enforce_eager": true,
+        "free_cache_engine": false,
+        "load_format": "dummy_dtensor",
+        "tensor_model_parallel_size": 1,
+        "max_num_batched_tokens": 8192,
+        "max_model_len": 8192,
+        "max_num_seqs": 1024,
+        "log_prob_micro_batch_size": null,
+        "log_prob_micro_batch_size_per_gpu": 2,
+        "log_prob_use_dynamic_bsz": false,
+        "log_prob_max_token_len_per_gpu": 16384,
+        "disable_log_stats": true,
+        "enable_chunked_prefill": true,
+        "do_sample": true,
+        "n": 1,
+        "val_kwargs": {
+          "top_k": -1,
+          "top_p": 1.0,
+          "temperature": 0.5,
+          "n": 1,
+          "do_sample": true
+        },
+        "rollout_filter_ratio": 0.25,
+        "rollout_filter_type": "std",
+        "lora": {
+          "enabled": false,
+          "rank": 64,
+          "alpha": 64,
+          "target_modules": "all-linear",
+          "local_temp_dir": "lora_temp"
+        }
+      }
+    },
+    "critic": {
+      "strategy": "fsdp",
+      "optim": {
+        "lr": 1e-05,
+        "lr_warmup_steps_ratio": 0.0,
+        "min_lr_ratio": null,
+        "warmup_style": "constant",
+        "total_training_steps": 0,
+        "betas": [
+          0.9,
+          0.999
+        ]
+      },
+      "model": {
+        "path": "Qwen/Qwen2.5-3B-Instruct",
+        "tokenizer_path": "Qwen/Qwen2.5-3B-Instruct",
+        "override_config": {},
+        "external_lib": null,
+        "enable_gradient_checkpointing": true,
+        "use_remove_padding": false,
+        "fsdp_config": {
+          "param_offload": false,
+          "optimizer_offload": false,
+          "wrap_policy": {
+            "min_num_params": 0
+          },
+          "fsdp_size": -1
+        }
+      },
+      "ppo_mini_batch_size": 16,
+      "ppo_micro_batch_size": null,
+      "ppo_micro_batch_size_per_gpu": 2,
+      "forward_micro_batch_size": null,
+      "forward_micro_batch_size_per_gpu": 2,
+      "use_dynamic_bsz": false,
+      "ppo_max_token_len_per_gpu": 32768,
+      "forward_max_token_len_per_gpu": 32768,
+      "ulysses_sequence_parallel_size": 1,
+      "ppo_epochs": 1,
+      "shuffle": false,
+      "grad_clip": 1.0,
+      "cliprange_value": 0.5,
+      "checkpoint": {
+        "contents": [
+          "model",
+          "hf_model",
+          "optimizer",
+          "extra"
+        ]
+      },
+      "lora": {
+        "enabled": false,
+        "rank": 64,
+        "alpha": 64,
+        "target_modules": "all-linear"
+      }
+    },
+    "reward_model": {
+      "enable": false,
+      "strategy": "fsdp",
+      "model": {
+        "input_tokenizer": "Qwen/Qwen2.5-3B-Instruct",
+        "path": "~/models/FsfairX-LLaMA3-RM-v0.1",
+        "external_lib": null,
+        "use_remove_padding": false,
+        "fsdp_config": {
+          "wrap_policy": {
+            "min_num_params": 0
+          },
+          "param_offload": false,
+          "fsdp_size": -1
+        }
+      },
+      "micro_batch_size": null,
+      "micro_batch_size_per_gpu": null,
+      "max_length": null,
+      "ulysses_sequence_parallel_size": 1,
+      "use_dynamic_bsz": false,
+      "forward_max_token_len_per_gpu": 32768,
+      "reward_manager": "naive"
+    },
+    "custom_reward_function": {
+      "path": null,
+      "name": "compute_score"
+    },
+    "algorithm": {
+      "gamma": 1.0,
+      "lam": 1.0,
+      "adv_estimator": "gae",
+      "kl_penalty": "kl",
+      "kl_ctrl": {
+        "type": "fixed",
+        "kl_coef": 0.001
+      }
+    },
+    "trainer": {
+      "balance_batch": true,
+      "total_epochs": 30,
+      "total_training_steps": 0,
+      "project_name": "ufb_eval",
+      "experiment_name": "eval_HotpotQA_Qwen2.5-3B-Instruct",
+      "logger": [
+        "console",
+        "wandb"
+      ],
+      "val_generations_to_log_to_wandb": 0,
+      "nnodes": 1,
+      "n_gpus_per_node": 2,
+      "save_freq": -1,
+      "resume_mode": "auto",
+      "resume_from_path": null,
+      "test_freq": 1,
+      "critic_warmup": 0,
+      "default_hdfs_dir": null,
+      "del_local_ckpt_after_load": false,
+      "default_local_dir": "checkpoints/ufb_eval/eval_HotpotQA_Qwen2.5-3B-Instruct",
+      "max_actor_ckpt_to_keep": null,
+      "max_critic_ckpt_to_keep": null,
+      "validation_steps": 1,
+      "eval_output_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.json",
+      "eval_params_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.params.json",
+      "eval_log_file": "logs/eval/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.log",
+      "eval_summary_json": "eval_results/eval_HotpotQA_Qwen2.5-3B-Instruct_20260328_084525.summary.json",
+      "eval_env_name": "hotpotqa",
+      "eval_env_tag": "HotpotQA",
+      "val_before_train": true,
+      "generations_to_log_to_wandb": {
+        "train": 128,
+        "val": 20
+      }
+    },
+    "custom_envs": {
+      "SimpleSokoban": {
+        "env_type": "sokoban",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the Sokoban puzzle. You are the player and you need to push all boxes to targets. When you are right next to a box, you can push it by moving in the same direction. You cannot push a box through a wall, and you cannot pull a box. The answer should be a sequence of actions, like <answer>Right || Right || Up</answer>",
+        "max_tokens": 1000,
+        "retry": {
+          "max_turns_per_attempt": 5,
+          "max_actions_per_attempt": 10,
+          "max_retry_attempts": 3,
+          "reward_decay_base": 2.0
+        },
+        "env_config": {
+          "dim_x": 6,
+          "dim_y": 6,
+          "num_boxes": 1,
+          "max_steps": 100
+        }
+      },
+      "LargerSokoban": {
+        "env_type": "sokoban",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the Sokoban puzzle. You are the player and you need to push all boxes to targets. When you are right next to a box, you can push it by moving in the same direction. You cannot push a box through a wall, and you cannot pull a box. The answer should be a sequence of actions, like <answer>Right || Right || Up</answer>",
+        "max_tokens": 100,
+        "env_config": {
+          "dim_x": 8,
+          "dim_y": 8,
+          "num_boxes": 2,
+          "max_steps": 100,
+          "search_depth": 10
+        }
+      },
+      "SokobanDifferentGridVocab": {
+        "env_type": "sokoban",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the Sokoban puzzle. You are the player and you need to push all boxes to targets. When you are right next to a box, you can push it by moving in the same direction. You cannot push a box through a wall, and you cannot pull a box. The answer should be a sequence of actions, like <answer>Right || Right || Up</answer>",
+        "max_tokens": 100,
+        "env_config": {
+          "search_depth": 30,
+          "dim_x": 6,
+          "dim_y": 6,
+          "num_boxes": 1,
+          "max_steps": 100,
+          "grid_lookup": {
+            "0": "W",
+            "1": ".",
+            "2": "G",
+            "3": "C",
+            "4": "B",
+            "5": "A",
+            "6": "@"
+          },
+          "grid_vocab": {
+            "W": "wall",
+            ".": "empty",
+            "G": "target",
+            "C": "box on target",
+            "B": "box",
+            "A": "player",
+            "@": "player on target"
+          }
+        }
+      },
+      "VisualSimpleSokoban": {
+        "env_type": "sokoban",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the Sokoban puzzle. You are the player and you need to push all boxes to targets. When you are right next to a box, you can push it by moving in the same direction. You cannot push a box through a wall, and you cannot pull a box. The answer should be a sequence of actions, like <answer>Right || Right || Up</answer>",
+        "max_tokens": 100,
+        "env_config": {
+          "dim_x": 6,
+          "dim_y": 6,
+          "num_boxes": 1,
+          "max_steps": 100,
+          "render_mode": "rgb_array"
+        }
+      },
+      "Countdown": {
+        "env_type": "countdown",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving the Countdown puzzle. You should use the num list to create an equation that equals the target. Example answer format: <think> To find an equation using [3, 5, 2] to get 4. Let's check 2 + 5 = 7, 7 - 3 = 4. So the answer is 2 + 5 - 3 = 4. </think><answer>2 + 5 - 3</answer>",
+        "max_tokens": 1000,
+        "env_config": {
+          "randomize_feedback": true
+        }
+      },
+      "Bandit": {
+        "env_type": "bandit",
+        "max_actions_per_traj": 1,
+        "env_instruction": "",
+        "max_tokens": 100,
+        "env_config": {
+          "lo_arm_name": "Phoenix",
+          "hi_arm_name": "Dragon"
+        }
+      },
+      "BanditTest": {
+        "env_type": "bandit",
+        "max_actions_per_traj": 1,
+        "env_instruction": "",
+        "max_tokens": 100,
+        "env_config": {
+          "lo_arm_name": "Trader",
+          "hi_arm_name": "Librarian"
+        }
+      },
+      "FrozenLake": {
+        "env_type": "frozen_lake",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the FrozenLake puzzle. Forbid the whole and go to the target. You may move to the unintended direction due to the slippery ice. Example answer format: <think>To forbid the hole and go to the target, I should go left then go up.</think><answer>Left || Up</answer>",
+        "max_tokens": 1000,
+        "retry": {
+          "max_turns_per_attempt": 5,
+          "max_actions_per_attempt": 10,
+          "max_retry_attempts": 3,
+          "reward_decay_base": 2.0
+        },
+        "env_config": null
+      },
+      "MetamathQA": {
+        "env_type": "metamathqa",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving Math problems. Only give the final answer between <answer> and </answer>.",
+        "max_tokens": 1000,
+        "env_config": {
+          "randomize_feedback": true
+        }
+      },
+      "MetamathQAFirstTurnSuccess": {
+        "env_type": "metamathqa_first_turn_success",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving Math problems. Only give the final answer between <answer> and </answer>.",
+        "max_tokens": 1000,
+        "env_config": {
+          "randomize_feedback": true
+        }
+      },
+      "MetamathQANoFeedback": {
+        "env_type": "metamathqa_no_feedback",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving Math problems. Only give the final answer between <answer> and </answer>.",
+        "max_tokens": 1000,
+        "env_config": null
+      },
+      "MetamathQASpecificFeedback": {
+        "env_type": "metamathqa_specific_feedback",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving Math problems. Only give the final answer between <answer> and </answer>.",
+        "max_tokens": 1000,
+        "env_config": null
+      },
+      "HotpotQA": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering multi-hop reasoning questions. Use the provided context to answer the question accurately. ",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "hotpotqa",
+          "randomize_feedback": true
+        }
+      },
+      "TheoremQA": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving Math problems.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "theoremqa"
+        }
+      },
+      "WebShop": {
+        "env_type": "webshop",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are browsing an online shop. Your goal is to buy one product that is close enough to the requested description within the action limit. It does not need to match perfectly.\nSearch terms should focus on the core product type and a few important attributes. Do not include details like size, color, price, or other highly specific option values in the search query.\nNever search for more than 2 times.\nDo not be too strict about the description. It is more important to buy a reasonably matching product within the action budget.\nPrioritize clicking a promising product on the current page over going to the next page.\nAlmost never click[next >] more than 2 times. Almost never click[< prev] unless you are confident the right product is on a previous page.\nIf you have fewer than 3 actions left, stop exploring and buy the best product currently available to you.\nIf you are on a product page and a matching size or color option exists, click size first and then color, one at a time, before click[buy now]. If only 1 action is left, just click[buy now].\nNever click[description] unless there is no better action available.\nPlan your actions so that on the final turn you buy the most suitable product you have found so far.\nYou must choose only from the available actions shown in the current state.\nAlways output exactly one action in this format: <answer>search[<keywords>]</answer> or <answer>click[<clickable>]</answer>\n",
+        "max_tokens": 200,
+        "env_config": null,
+        "retry": {
+          "max_turns_per_attempt": 5,
+          "max_actions_per_attempt": 10,
+          "max_retry_attempts": 3,
+          "reward_decay_base": 2.0
+        }
+      },
+      "GSM8k": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving math problems.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "gsm8k"
+        }
+      },
+      "Musique": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering multi-hop open-domain questions. Use the provided context to answer accurately.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "musique"
+        }
+      },
+      "MMLU": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering multiple-choice academic questions. Provide the correct option letter.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "mmlu"
+        }
+      },
+      "MMLUPro": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering advanced multiple-choice questions. Provide the correct option letter.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "mmlu_pro"
+        }
+      },
+      "MMLU-STEM": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering STEM-focused multiple-choice academic questions. Provide the correct option letter.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "mmlu_stem"
+        }
+      },
+      "ConcurrentQA": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering multi-hop concurrent retrieval questions. Provide concise answers.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "concurrentqa"
+        }
+      },
+      "MMLURedux": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering multiple-choice academic questions. Provide the correct option letter.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "mmlu_redux"
+        }
+      },
+      "GPQA": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are answering physics multiple-choice questions. Provide the correct option letter.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "gpqa"
+        }
+      },
+      "MATH": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving mathematics competition problems.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "math"
+        }
+      },
+      "HumanEval": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are writing Python functions to pass given unit tests.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "humaneval"
+        }
+      },
+      "MBPP": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are writing Python functions to pass provided unit tests.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "mbpp"
+        }
+      },
+      "MultiPLE": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are writing programs in multiple languages to satisfy tests.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "multipl_e"
+        }
+      },
+      "LiveCodeBench2305_2409": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are writing Python code to solve tasks in the LiveCodeBench (2305-2409) benchmark.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "livecodebench_2305_2409"
+        }
+      },
+      "LiveBench0831": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are writing code to solve tasks in the LiveBench 0831 benchmark.",
+        "max_tokens": 1000,
+        "env_config": {
+          "dataset_name": "livebench_0831"
+        }
+      },
+      "AIME24": {
+        "env_type": "static",
+        "max_actions_per_traj": 5,
+        "env_instruction": "You are solving difficult mathematics competition problems from AIME 2024.",
+        "max_tokens": 4000,
+        "env_config": {
+          "dataset_name": "aime24"
+        }
+      },
+      "Alfworld": {
+        "env_type": "alfworld",
+        "max_actions_per_traj": 50,
+        "env_instruction": "You are an expert agent in the ALFRED Embodied Environment.\nComplete household tasks by navigating and interacting with objects.\nReason step-by-step about the current situation within <think> </think> tags.\nThen choose an admissible action within <answer>...</answer> tags.\n",
+        "max_tokens": 512,
+        "env_config": null
+      },
+      "SimpleSudoku": {
+        "env_type": "sudoku",
+        "max_actions_per_traj": 20,
+        "env_instruction": "You are solving a Sudoku puzzle. Fill in the grid so that every row, column, and 3x3 box contains the numbers 1-9 without repetition.\nInitial cells are shown in [brackets] and cannot be modified. Empty cells are shown as dots (.).\nPlace numbers one at a time using the format: <answer>place 5 at row 2 col 3</answer> or <answer>2,3,5</answer>\n",
+        "max_tokens": 150,
+        "env_config": {
+          "grid_size": 9,
+          "difficulty": "easy",
+          "render_format": "with_feedback",
+          "show_conflicts": true
+        }
+      },
+      "Lean": {
+        "env_type": "lean",
+        "max_actions_per_traj": 30,
+        "env_instruction": "You are a Lean theorem prover. Given a Lean theorem statement, propose a sequence of tactics that completes the proof. Think step by step about which tactics to apply next. Provide tactics separated by '||', for example <answer>intro || simp || rfl</answer>.",
+        "max_tokens": 512,
+        "env_config": null
+      },
+      "SearchQA": {
+        "env_type": "search",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are a search agent answering questions by searching for information.\nUse search[your query] to find relevant documents, and finish[your answer] to submit your final answer.\nReason step-by-step within <think> </think> tags, then provide your action within <answer>...</answer> tags.\n",
+        "max_tokens": 300,
+        "env_config": null
+      },
+      "Spatial": {
+        "env_type": "spatial",
+        "max_actions_per_traj": 11,
+        "env_instruction": "You are navigating a room and answering spatial reasoning questions. Explore the room by moving around, then answer the question about spatial relationships.",
+        "max_tokens": 200,
+        "env_config": null
+      },
+      "CountdownRetry": {
+        "env_type": "countdown",
+        "max_actions_per_traj": 1,
+        "env_instruction": "You are solving the Countdown puzzle. You should use the num list to create an equation that equals the target. Example answer format: <think> To find an equation using [3, 5, 2] to get 4. Let's check 2 + 5 = 7, 7 - 3 = 4. So the answer is 2 + 5 - 3 = 4. </think><answer>2 + 5 - 3</answer>",
+        "max_tokens": 100,
+        "env_config": null,
+        "retry": {
+          "max_attempts": 5,
+          "randomize_feedback": true,
+          "reward_decay_base": 2.0
+        }
+      },
+      "SimpleSokobanRetry": {
+        "env_type": "sokoban",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the Sokoban puzzle. You are the player and you need to push all boxes to targets. When you are right next to a box, you can push it by moving in the same direction. You cannot push a box through a wall, and you cannot pull a box. The answer should be a sequence of actions, like <answer>Right || Right || Up</answer>",
+        "max_tokens": 100,
+        "env_config": {
+          "dim_x": 6,
+          "dim_y": 6,
+          "num_boxes": 1,
+          "max_steps": 100
+        },
+        "retry": {
+          "max_attempts": 5,
+          "randomize_feedback": true,
+          "reward_decay_base": 2.0
+        }
+      },
+      "SimpleSudokuRetry": {
+        "env_type": "sudoku",
+        "max_actions_per_traj": 20,
+        "env_instruction": "You are solving a Sudoku puzzle. Fill in the grid so that every row, column, and 3x3 box contains the numbers 1-9 without repetition.\nInitial cells are shown in [brackets] and cannot be modified. Empty cells are shown as dots (.).\nPlace numbers one at a time using the format: <answer>place 5 at row 2 col 3</answer> or <answer>2,3,5</answer>\n",
+        "max_tokens": 150,
+        "env_config": {
+          "grid_size": 9,
+          "difficulty": "easy",
+          "render_format": "with_feedback",
+          "show_conflicts": true
+        },
+        "retry": {
+          "max_attempts": 5,
+          "randomize_feedback": true,
+          "reward_decay_base": 2.0
+        }
+      },
+      "FrozenLakeRetry": {
+        "env_type": "frozen_lake",
+        "max_actions_per_traj": 10,
+        "env_instruction": "You are solving the FrozenLake puzzle. Forbid the whole and go to the target. You may move to the unintended direction due to the slippery ice. Example answer format: <think>To forbid the hole and go to the target, I should go left then go up.</think><answer>Left || Up</answer>",
+        "max_tokens": 100,
+        "env_config": null,
+        "retry": {
+          "max_attempts": 5,
+          "randomize_feedback": true,
+          "reward_decay_base": 2.0
+        }
+      }
+    },
+    "system": {
+      "CUDA_VISIBLE_DEVICES": "0,1"
+    },
+    "ppo_micro_batch_size_per_gpu": 2,
+    "log_prob_micro_batch_size_per_gpu": 2,
+    "ppo_mini_batch_size": 16,
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "enable_response_mask": true,
+    "grpo_advantage_length_weight": false,
+    "lora": {
+      "enabled": false,
+      "rank": 64,
+      "alpha": 64,
+      "target_modules": "all-linear",
+      "local_temp_dir": "lora_temp"
+    },
+    "agent_proxy": {
+      "max_turn": 5,
+      "action_sep": "||",
+      "max_actions_per_turn": 5,
+      "context_window_mode": "full",
+      "max_context_window": -1,
+      "use_turn_scores": false,
+      "enable_think": true,
+      "reward_normalization": {
+        "grouping": "state",
+        "method": "identity"
+      }
+    },
+    "val_agent_proxy": {
+      "max_turn": 5
+    },
+    "es_manager": {
+      "format_penalty": -0.1,
+      "train": {
+        "env_groups": 8,
+        "group_size": 16,
+        "env_configs": {
+          "tags": [
+            "HotpotQA"
+          ],
+          "n_groups": [
+            8
+          ]
+        }
+      },
+      "val": {
+        "env_groups": 1024,
+        "group_size": 1,
+        "env_configs": {
+          "tags": [
+            "HotpotQA"
+          ],
+          "n_groups": [
+            1024
+          ]
+        }
+      }
+    },
+    "ctx_manager": {
+      "generation": {
+        "gen_config": {
+          "response_length": 400,
+          "temperature": 1,
+          "top_p": 1,
+          "top_k": -1,
+          "kwargs": null
+        }
+      }
+    },
+    "micro_batch_size_per_gpu": 2
+  }
+}

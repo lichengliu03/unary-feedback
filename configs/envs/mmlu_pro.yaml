@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - /base
+  - _self_
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["MMLUPro"]
+  val:
+    env_configs:
+      tags: ["MMLUPro"]

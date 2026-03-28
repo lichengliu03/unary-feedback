@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - /base
+  - _self_
+
+agent_proxy:
+  max_turn: 5
+
+val_agent_proxy:
+  max_turn: 5
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["Spatial"]
+  val:
+    env_configs:
+      tags: ["Spatial"]

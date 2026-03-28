@@ -1,0 +1,26 @@
+# @package _global_
+
+# Sudoku with retry: ~5 turns per attempt, 5 attempts → max_turn=25
+defaults:
+  - /base
+  - _self_
+
+agent_proxy:
+  max_turn: 25
+
+val_agent_proxy:
+  max_turn: 25
+
+es_manager:
+  train:
+    env_groups: 8
+    group_size: 16
+    env_configs:
+      tags: ["SimpleSudokuRetry"]
+      n_groups: [8]
+  val:
+    env_groups: 32
+    group_size: 16
+    env_configs:
+      tags: ["SimpleSudokuRetry"]
+      n_groups: [32]

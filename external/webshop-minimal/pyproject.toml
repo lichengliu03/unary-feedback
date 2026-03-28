@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages]
+find = { where = ["."] }
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+# Including these example data for easier dev and testing
+webshop_minimal = [
+    "search_engine/**/*",
+    "templates/*",
+    "data/*",
+]
+
+[project]
+name = "webshop_minimal"
+version = "0.1.0"
+description = "A Gym environment for WebShop simulation"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "beautifulsoup4",
+    "cleantext",
+    "flask",
+    "gym",
+    "html2text",
+    "numpy",
+    "pandas",
+    "torch",
+    "rank_bm25",
+    "pyserini",
+    "faiss-cpu",
+    "thefuzz",
+    "gdown",
+    "spacy",
+    "rich",
+]

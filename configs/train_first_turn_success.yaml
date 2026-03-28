@@ -1,0 +1,11 @@
+defaults:
+  - base
+
+# Override environment to use first-turn-success reward ablation.
+es_manager:
+  train:
+    env_configs:
+      tags: ["MetamathQAFirstTurnSuccess"]
+  val:
+    env_configs:
+      tags: ["MetamathQAFirstTurnSuccess"]
