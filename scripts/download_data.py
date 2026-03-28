@@ -18,6 +18,13 @@ def main():
     )
     print("Done.\n")
 
+    # 2. Countdown (separate dataset, not in ragen-datasets)
+    print("Downloading Countdown data...")
+    os.makedirs("data/countdown", exist_ok=True)
+    url = "https://huggingface.co/datasets/Jiayi-Pan/Countdown-Tasks-3to4/resolve/main/data/train-00000-of-00001.parquet"
+    os.system(f"wget -q {url} -O data/countdown/train.parquet")
+    print("Done.\n")
+
     # 2. MetaMathQA
     print("Downloading MetaMathQA...")
     import datasets

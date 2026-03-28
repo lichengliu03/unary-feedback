@@ -40,6 +40,7 @@ import torch
 from verl.utils.torch_functional import masked_mean
 
 from ufb.llm_agent.agent_proxy import LLMAgentProxy
+from ufb.trainer.rollout_filter import apply_rollout_filter, build_rollout_filter_config
 from ufb.utils import GenerationsLogger
 
 def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty='kl'):
@@ -295,93 +296,61 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                           default_backend=self.config.trainer.logger,
                           config=OmegaConf.to_container(self.config, resolve=True))
 
-        self.global_steps = 0
+        progress_bar = None
+        try:
+            self.global_steps = 0
 
-        # load checkpoint before doing anything
-        self._load_checkpoint()
+            # load checkpoint before doing anything
+            self._load_checkpoint()
 
-        # perform validation before training
-        # currently, we only support validation using the reward_function.
-        if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
-            val_metrics = self._validate()
-            pprint(f'Initial validation metrics: {val_metrics}')
-            logger.log(data=val_metrics, step=self.global_steps)
-            if self.config.trainer.get('val_only', False):
-                return
+            # perform validation before training
+            # currently, we only support validation using the reward_function.
+            if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
+                val_metrics = self._validate()
+                pprint(f'Initial validation metrics: {val_metrics}')
+                logger.log(data=val_metrics, step=self.global_steps)
+                if self.config.trainer.get('val_only', False):
+                    return
 
-        # add tqdm
-        progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+            # add tqdm
+            progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
 
-        # we start from step 1
-        self.global_steps += 1
-        last_val_metrics = None
+            # we start from step 1
+            self.global_steps += 1
+            last_val_metrics = None
 
-        def _process_batch_for_logging(batch):
-            inputs = batch.batch['input_ids']
-            inputs = [self.tokenizer.decode(input_ids, skip_special_tokens=True) for input_ids in inputs]
-            outputs = [""] * len(inputs)
-            scores = batch.batch['rm_scores'].sum(-1).cpu().tolist()
-            return inputs, outputs, scores
+            def _process_batch_for_logging(batch):
+                inputs = batch.batch['input_ids']
+                inputs = [self.tokenizer.decode(input_ids, skip_special_tokens=True) for input_ids in inputs]
+                outputs = [""] * len(inputs)
+                scores = batch.batch['rm_scores'].sum(-1).cpu().tolist()
+                return inputs, outputs, scores
 
-        def _filter_rollout(batch):
-            """filter rollout based on in-group max - in-group mean. We want those groups to have high-quality rollouts that deviates significantly from the mean"""
-            rollout_filter_ratio = self.config.actor_rollout_ref.rollout.rollout_filter_ratio
-            num_groups, group_size = self.config.es_manager.train.env_groups, self.config.es_manager.train.group_size
+            rollout_filter = build_rollout_filter_config(self.config.actor_rollout_ref.rollout)
 
-            rm_scores = batch.batch["original_rm_scores"].sum(dim=-1).view(num_groups, group_size)
-            in_group_std = rm_scores.std(dim=-1)
-            in_group_max = rm_scores.max(dim=-1).values
-            in_group_mean = rm_scores.mean(dim=-1)
-            if rollout_filter_ratio == 1:
-                return batch, {"rollout/in_group_std": in_group_std.mean(), "rollout/in_group_max": in_group_max.mean(), "rollout/in_group_mean": in_group_mean.mean(), "rollout/chosen_in_group_std": in_group_std.mean(), "rollout/chosen_in_group_max": in_group_max.mean(), "rollout/chosen_in_group_mean": in_group_mean.mean()}
-
-            if self.config.actor_rollout_ref.rollout.rollout_filter_type == "std_rev":
-                top_groups = (-in_group_std).topk(int(rollout_filter_ratio * num_groups)).indices
-            elif self.config.actor_rollout_ref.rollout.rollout_filter_type == "std":
-                top_groups = in_group_std.topk(int(rollout_filter_ratio * num_groups)).indices
-            else:
-                raise ValueError(f"Invalid rollout filter type: {self.config.actor_rollout_ref.rollout.rollout_filter_type}")
-
-            mask = torch.zeros(num_groups, dtype=torch.bool)
-            mask[top_groups] = True
-            mask = mask.unsqueeze(1).expand(-1, group_size).flatten()
-
-            batch.batch = batch.batch[mask]
-
-            for key, value in batch.non_tensor_batch.items():
-                if isinstance(value, np.ndarray):
-                    batch.non_tensor_batch[key] = value[mask]
-                else:
-                    batch.non_tensor_batch[key] = [v for v, m in zip(value, mask) if m]
-
-            metrics = {
-                "rollout/in_group_std": in_group_std.mean(),
-                "rollout/in_group_max": in_group_max.mean(),
-                "rollout/in_group_mean": in_group_mean.mean(),
-                "rollout/chosen_in_group_std": in_group_std[top_groups].mean(),
-                "rollout/chosen_in_group_max": in_group_max[top_groups].mean(),
-                "rollout/chosen_in_group_mean": in_group_mean[top_groups].mean()
-            }
-            return batch, metrics
+            def _filter_rollout(batch):
+                """Filter rollouts using per-group reward std with configurable selection rules."""
+                num_groups, group_size = self.config.es_manager.train.env_groups, self.config.es_manager.train.group_size
+                return apply_rollout_filter(batch, num_groups=num_groups, group_size=group_size, config=rollout_filter)
 
 
-        self.start_time = time.time()
-        for step in range(self.total_training_steps):
-            # metrics = {}
-            timing_raw = {}
+            self.start_time = time.time()
+            for step in range(self.total_training_steps):
+                # metrics = {}
+                timing_raw = {}
 
-            batch: DataProto = DataProto()
-            is_last_step = self.global_steps >= self.total_training_steps
+                batch: DataProto = DataProto()
+                is_last_step = self.global_steps >= self.total_training_steps
 
-            with _timer('step', timing_raw):
-                # generate a batch
-                with _timer('gen', timing_raw):
-                    batch = self.agent_proxy.rollout(batch, val=False)
-                    batch, metrics = _filter_rollout(batch)
-                    metrics.update({"train/" + key: value for key, value in batch.meta_info['metrics'].items()})
+                with _timer('step', timing_raw):
+                    # generate a batch
+                    with _timer('gen', timing_raw):
+                        batch = self.agent_proxy.rollout(batch, val=False)
+                        batch, metrics = _filter_rollout(batch)
+                        metrics.update({"train/" + key: value for key, value in batch.meta_info['metrics'].items()})
 
-                    inputs, outputs, scores = _process_batch_for_logging(batch)
-                    # self._maybe_log_generations(inputs=inputs, outputs=outputs, scores=scores, _type='train')
+                        inputs, outputs, scores = _process_batch_for_logging(batch)
+                        # self._maybe_log_generations(inputs=inputs, outputs=outputs, scores=scores, _type='train')
 
 
 
@@ -524,25 +493,28 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                     with _timer('save_checkpoint', timing_raw):
                         self._save_checkpoint()
 
-            # collect metrics
-            metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
-            metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-            # TODO: implement actual tflpo and theoretical tflpo
-            n_gpus = self.resource_pool_manager.get_n_gpus()
-            metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                # collect metrics
+                metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+                # TODO: implement actual tflpo and theoretical tflpo
+                n_gpus = self.resource_pool_manager.get_n_gpus()
+                metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
-            # add another timing metric: total time
-            metrics.update({"timing_s/total": time.time() - self.start_time})
-            # TODO: make a canonical logger that supports various backend
-            logger.log(data=metrics, step=self.global_steps)
+                # add another timing metric: total time
+                metrics.update({"timing_s/total": time.time() - self.start_time})
+                # TODO: make a canonical logger that supports various backend
+                logger.log(data=metrics, step=self.global_steps)
 
-            if is_last_step:
-                pprint(f'Final validation metrics: {last_val_metrics}')
+                if is_last_step:
+                    pprint(f'Final validation metrics: {last_val_metrics}')
+                    return
+
+                progress_bar.update(1)
+                self.global_steps += 1
+        finally:
+            if progress_bar is not None:
                 progress_bar.close()
-                return
-
-            progress_bar.update(1)
-            self.global_steps += 1
+            logger.finish(suppress_exceptions=True)
 
     def _save_checkpoint(self):
         """ 

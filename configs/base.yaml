@@ -5,7 +5,8 @@ defaults:
 system:
   CUDA_VISIBLE_DEVICES: "0, 1"
 
-micro_batch_size_per_gpu: 1
+ppo_micro_batch_size_per_gpu: null # default derived from ppo_mini_batch_size / n_gpus if unset
+log_prob_micro_batch_size_per_gpu: null # defaults to PPO micro batch size if unset, but can be set larger
 ppo_mini_batch_size: 8
 model_path: Qwen/Qwen2.5-3B-Instruct
 enable_response_mask: True
@@ -23,8 +24,8 @@ actor_rollout_ref:
     path: ${model_path}
   actor:
     ppo_mini_batch_size: ${ppo_mini_batch_size}  # by default, ppo_mini_batch_size = train_batch_size / 4
-    micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
-    ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu} # keep actor micro batch aligned with PPO updates
+    ppo_micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu}
     use_ref: True
     entropy_coeff: 0.001
     use_kl_loss: False
@@ -43,9 +44,9 @@ actor_rollout_ref:
       target_modules: ${lora.target_modules}
       local_temp_dir: ${lora.local_temp_dir}
   ref:
-    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: ${log_prob_micro_batch_size_per_gpu}
   rollout:
-    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: ${log_prob_micro_batch_size_per_gpu}
     tensor_model_parallel_size: 2
     max_model_len: 8192
     prompt_length: 1 # useless. Just put it here
@@ -54,7 +55,12 @@ actor_rollout_ref:
     max_num_batched_tokens: 8192 # set only when enable_chunked_prefill is true
     temperature: 1
     rollout_filter_ratio: 0.25
-    rollout_filter_type: std # max_mean or std
+    rollout_filter_value: ${actor_rollout_ref.rollout.rollout_filter_ratio}
+    rollout_filter_strategy: top_k
+    rollout_filter_type: std # std/largest keeps high-std groups; std_rev/smallest keeps low-std groups
+    rollout_filter_top_p_prob_mode: linear
+    rollout_filter_include_zero: True
+    rollout_filter_selection_eps: 0.01
     enforce_eager: True #  for small models, set both enforce_eager and free_cache_engine to False to make rollout faster
     free_cache_engine: False
     val_kwargs:
@@ -69,7 +75,7 @@ actor_rollout_ref:
 
 critic:
   ppo_mini_batch_size: ${ppo_mini_batch_size} # by default, ppo_mini_batch_size = train_batch_size / 4
-  ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+  ppo_micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu}
   model:
     path: ${model_path}
   optim:

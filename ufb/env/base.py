@@ -2,6 +2,18 @@ from abc import ABC, abstractmethod
 import re
 from typing import Optional, List, Tuple, Any, Dict
 
+DEFAULT_FEEDBACK_POOL = [
+    "Incorrect. Please think again.",
+    "That's wrong, try again.",
+    "Not quite right. Please try again.",
+    "Your answer is incorrect.",
+    "Wrong answer. Give it another try.",
+    "That is not correct. Try again.",
+    "Incorrect. Think carefully and try again.",
+    "No, that's not right. Please reconsider.",
+]
+
+
 class BaseEnv(ABC):
     """
     Abstract base class for all environments.

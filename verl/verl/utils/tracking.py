@@ -15,10 +15,14 @@
 A unified tracking interface that supports logging data to different backend
 """
 import dataclasses
+import logging
+import sys
 from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import List, Union, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class Tracking(object):
@@ -35,6 +39,7 @@ class Tracking(object):
                 assert backend in self.supported_backend, f'{backend} is not supported'
 
         self.logger = {}
+        self._finished = False
 
         if 'tracking' in default_backend or 'wandb' in default_backend:
             import wandb
@@ -97,15 +102,32 @@ class Tracking(object):
             if backend is None or default_backend in backend:
                 logger_instance.log(data=data, step=step)
 
-    def __del__(self):
+    def finish(self, exit_code=0, suppress_exceptions=False):
+        if self._finished:
+            return
+        self._finished = True
+
+        def _run(backend, fn):
+            try:
+                fn()
+            except Exception:
+                if not suppress_exceptions:
+                    raise
+                logger.debug("Failed to finish tracking backend '%s'", backend, exc_info=True)
+
         if 'wandb' in self.logger:
-            self.logger['wandb'].finish(exit_code=0)
+            _run('wandb', lambda: self.logger['wandb'].finish(exit_code=exit_code))
         if 'swanlab' in self.logger:
-            self.logger['swanlab'].finish()
+            _run('swanlab', self.logger['swanlab'].finish)
         if 'vemlp_wandb' in self.logger:
-            self.logger['vemlp_wandb'].finish(exit_code=0)
+            _run('vemlp_wandb', lambda: self.logger['vemlp_wandb'].finish(exit_code=exit_code))
         if 'tensorboard' in self.logger:
-            self.logger['tensorboard'].finish()
+            _run('tensorboard', self.logger['tensorboard'].finish)
+
+    def __del__(self):
+        if getattr(sys, "is_finalizing", lambda: False)():
+            return
+        self.finish(exit_code=0, suppress_exceptions=True)
 
 
 class _TensorboardAdapter:

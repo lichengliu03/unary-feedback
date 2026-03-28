@@ -117,6 +117,7 @@ class ActorRolloutRefWorker(Worker):
         self._is_actor = self.role in ['actor', 'actor_rollout', 'actor_rollout_ref']
         self._is_rollout = self.role in ['rollout', 'actor_rollout', 'actor_rollout_ref']
         self._is_ref = self.role in ['ref', 'actor_rollout_ref']
+        self._rollout_session_active = False
 
         self._is_offload_param = False
         self._is_offload_optimizer = False
@@ -525,8 +526,6 @@ class ActorRolloutRefWorker(Worker):
         prompts = prompts.to(torch.cuda.current_device())
 
         assert self._is_rollout
-        if self._is_offload_param:
-            load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
         meta_info = {
             'eos_token_id':
@@ -537,23 +536,22 @@ class ActorRolloutRefWorker(Worker):
                 if self.generation_config is not None else self.tokenizer.pad_token_id,
         }
         prompts.meta_info.update(meta_info)
-        with self.rollout_sharding_manager:
+        opened_session_here = False
+        if not self._rollout_session_active:
+            self._enter_rollout_session()
+            opened_session_here = True
 
-            # after parameters sync with rollout, offload actor model to CPU
-            if self._is_offload_param:
-                offload_fsdp_model_to_cpu(self.actor_module_fsdp)
-            if self._is_offload_optimizer:
-                offload_fsdp_optimizer(optimizer=self.actor_optimizer)
-
-            log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
-
+        try:
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)
 
             output = self.rollout.generate_sequences(prompts=prompts)
-            
+
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
+        finally:
+            if opened_session_here:
+                self._exit_rollout_session()
 
         output = output.to('cpu')
 
@@ -561,8 +559,43 @@ class ActorRolloutRefWorker(Worker):
         log_gpu_memory_usage('After recompute log prob', logger=logger)
         return output
 
+    def _enter_rollout_session(self):
+        assert self._is_rollout
+        if self._rollout_session_active:
+            return
+
+        if self._is_offload_param:
+            load_fsdp_model_to_gpu(self.actor_module_fsdp)
+
+        self.rollout_sharding_manager.__enter__()
+
+        # Once rollout weights are synced into vLLM, keep the actor/offloaded state
+        # stable for the rest of this multi-turn rollout session.
+        if self._is_offload_param:
+            offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+        if self._is_offload_optimizer:
+            offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+
+        log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
+        self._rollout_session_active = True
+
+    def _exit_rollout_session(self):
+        if not self._rollout_session_active:
+            return
+
+        self.rollout_sharding_manager.__exit__(None, None, None)
+        self._rollout_session_active = False
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def start_rollout_session(self):
+        self._enter_rollout_session()
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def end_rollout_session(self):
+        self._exit_rollout_session()
+
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
-    def compute_log_prob(self, data: DataProto, no_lora=False):
+    def compute_log_prob(self, data: DataProto, no_lora=False, calculate_entropy=False):
         # when no_lora is True, we use the actor without lora applied to calculate the log_prob
         # which is mostly used for ref log_prob calculation
         assert self._is_actor
@@ -582,8 +615,11 @@ class ActorRolloutRefWorker(Worker):
             # perform recompute log_prob
             with self.ulysses_sharding_manager:
                 data = self.ulysses_sharding_manager.preprocess_data(data)
-                output = self.actor.compute_log_prob(data=data)
-                output = DataProto.from_dict(tensors={'old_log_probs': output},
+                output, entropys = self.actor.compute_log_prob(data=data, calculate_entropy=calculate_entropy)
+                tensors = {'old_log_probs': output}
+                if calculate_entropy:
+                    tensors['entropys'] = entropys
+                output = DataProto.from_dict(tensors=tensors,
                                             meta_info={'temperature': self.config.rollout.temperature})
                 output = self.ulysses_sharding_manager.postprocess_data(output)
 
@@ -604,7 +640,7 @@ class ActorRolloutRefWorker(Worker):
     def compute_ref_log_prob(self, data: DataProto):
         if self._is_lora:
             # if _is_lora, actor without lora applied is the ref
-            data = self.compute_log_prob(data, no_lora=True)
+            data = self.compute_log_prob(data, no_lora=True, calculate_entropy=False)
             # this old_log_probs is in fact ref_log_prob
             data = DataProto.from_dict(tensors={'ref_log_prob': data.batch['old_log_probs']})
             return data
@@ -623,7 +659,7 @@ class ActorRolloutRefWorker(Worker):
         data.meta_info['use_dynamic_bsz'] = self.config.ref.log_prob_use_dynamic_bsz
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
-            output = self.ref_policy.compute_log_prob(data=data)
+            output, _ = self.ref_policy.compute_log_prob(data=data, calculate_entropy=False)
             output = DataProto.from_dict(tensors={'ref_log_prob': output})
             output = self.ulysses_sharding_manager.postprocess_data(output)
 
