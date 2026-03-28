@@ -1,0 +1,23 @@
+{
+  "primary": {
+    "input_file": "eval_results/eval_HotpotQA_hf_merged_20260328_153321.summary.json",
+    "results": {
+      "step_200": {
+        "step": 200,
+        "pass_at_k": {
+          "1": 0.282,
+          "2": 0.355,
+          "3": 0.375,
+          "4": 0.38,
+          "5": 0.383
+        },
+        "conditional_success": {
+          "Succ@2|fail@1": 0.10167130919220058,
+          "Succ@3|fail@2": 0.031007751937984523,
+          "Succ@4|fail@3": 0.008000000000000007,
+          "Succ@5|fail@4": 0.004838709677419359
+        }
+      }
+    }
+  }
+}

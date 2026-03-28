@@ -1,0 +1,26 @@
+{
+  "step_200": {
+    "num_batches": 1,
+    "avg_success": 0.383,
+    "min_success": 0.383,
+    "max_success": 0.383,
+    "batches": [
+      {
+        "success": 0.383,
+        "num_actions": 3.597,
+        "reward": 0.324,
+        "response_length": 125.822
+      }
+    ],
+    "avg_reward": 0.324,
+    "avg_num_actions": 3.597,
+    "avg_response_length": 125.822,
+    "pass_at_k": {
+      "pass@1": 0.282,
+      "pass@2": 0.355,
+      "pass@3": 0.375,
+      "pass@4": 0.38,
+      "pass@5": 0.383
+    }
+  }
+}
