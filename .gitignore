@@ -50,3 +50,6 @@ scripts/delta
 
 # logs
 logs/
+
+# loaded checkpoints
+loaded_checkpoints/

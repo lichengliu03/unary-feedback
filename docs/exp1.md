@@ -37,6 +37,19 @@ For new environments, `Quick test` is the recommended first checkpoint before sp
 
 ## Scripts
 
+### Download Exp1 models
+
+Use `scripts/download_exp1_models.sh` to reproduce the current `loaded_checkpoints/exp1/` layout in one step.
+
+```bash
+bash scripts/download_exp1_models.sh
+```
+
+Notes:
+
+- direct models are downloaded as ready-to-evaluate Hugging Face model folders
+- checkpoint-backed models are downloaded first and then converted from the latest `global_step_*`
+
 ### Quick test
 
 `scripts/quick_test.sh` is the lightweight entry point for:
