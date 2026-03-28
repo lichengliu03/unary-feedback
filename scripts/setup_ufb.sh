@@ -63,6 +63,12 @@ main() {
     # Need to source conda for script environment
     eval "$(conda shell.bash hook)"
     conda activate ragen
+
+    # gym_sokoban==0.0.6 imports pkg_resources at runtime, which is no longer
+    # available in newer setuptools releases. Pin setuptools to a compatible
+    # version so the Sokoban environment can be imported successfully.
+    print_step "Pinning setuptools for gym_sokoban compatibility..."
+    pip install "setuptools<81"
     
     # Clone repository
     # print_step "Cloning ragen repository..."
