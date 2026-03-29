@@ -3,12 +3,15 @@ FSDP PPO Trainer with Ray-based single controller.
 Adapted from the excellently written verl implementation.
 """
 
+import json
 import os
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pprint import pprint
+from pathlib import Path
 from typing import Type, Dict, Literal, Optional
 from copy import deepcopy
 from tqdm import tqdm
@@ -120,6 +123,151 @@ class RayAgentTrainer(VerlRayPPOTrainer):
             tokenizer=self.tokenizer
         )
 
+    def _init_actor_rollout_worker_group(self):
+        self.resource_pool_manager.create_resource_pool()
+        self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
+
+        if not self.hybrid_engine:
+            raise NotImplementedError
+
+        resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
+        actor_rollout_cls = RayClassWithInitArgs(cls=self.role_worker_mapping[Role.ActorRollout],
+                                                 config=self.config.actor_rollout_ref,
+                                                 role='actor_rollout')
+        self.resource_pool_to_cls[resource_pool]['actor_rollout'] = actor_rollout_cls
+
+        all_wg = {}
+        self.wg_dicts = []
+        for resource_pool, class_dict in self.resource_pool_to_cls.items():
+            worker_dict_cls = create_colocated_worker_cls(class_dict=class_dict)
+            wg_dict = self.ray_worker_group_cls(resource_pool=resource_pool, ray_cls_with_init=worker_dict_cls)
+            spawn_wg = wg_dict.spawn(prefix_set=class_dict.keys())
+            all_wg.update(spawn_wg)
+            self.wg_dicts.append(wg_dict)
+
+        self.actor_rollout_wg = all_wg['actor_rollout']
+        self.actor_rollout_wg.init_model(self.config.trainer.default_local_dir)
+
+    def init_eval_only_workers(self):
+        self._init_actor_rollout_worker_group()
+        self.init_agent_proxy()
+
+    def evaluate(self):
+        from pprint import pprint
+        from verl.utils.tracking import Tracking
+        from omegaconf import OmegaConf
+
+        logger = Tracking(project_name=self.config.trainer.project_name,
+                          experiment_name=self.config.trainer.experiment_name,
+                          default_backend=self.config.trainer.logger,
+                          config=OmegaConf.to_container(self.config, resolve=True))
+
+        self.global_steps = 0
+        val_metrics = self._validate()
+        pprint(f'Evaluation metrics: {val_metrics}')
+        self._write_eval_payload()
+        self._write_eval_params()
+        logger.log(data=val_metrics, step=self.global_steps)
+
+    def _to_jsonable(self, value):
+        if isinstance(value, dict):
+            return {str(k): self._to_jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._to_jsonable(v) for v in value]
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, torch.Tensor):
+            if value.numel() == 1:
+                return value.item()
+            return value.detach().cpu().tolist()
+        return value
+
+    def _should_collect_eval_payload(self):
+        return bool(self.config.trainer.get('eval_output_json'))
+
+    def _build_eval_payload(self, metric_dict, episode_records):
+        success_count = sum(1 for record in episode_records if record.get("success"))
+        summary = self._to_jsonable(metric_dict)
+        summary["num_episodes"] = len(episode_records)
+        summary["num_success"] = success_count
+        summary["num_failure"] = len(episode_records) - success_count
+
+        return {
+            "format_version": 1,
+            "created_at": datetime.now().isoformat(),
+            "metadata": {
+                "project_name": self.config.trainer.project_name,
+                "experiment_name": self.config.trainer.experiment_name,
+                "model_path": self.config.actor_rollout_ref.model.path,
+                "env_tags": list(self.config.es_manager.val.env_configs.tags),
+                "validation_steps": int(self.config.trainer.validation_steps),
+                "val_env_groups": int(self.config.es_manager.val.env_groups),
+                "val_group_size": int(self.config.es_manager.val.group_size),
+                "max_turn": int(self.config.val_agent_proxy.max_turn),
+            },
+            "summary": summary,
+            "episodes": self._to_jsonable(episode_records),
+        }
+
+    def _build_eval_params_payload(self):
+        resolved_config = OmegaConf.to_container(self.config, resolve=True)
+        return {
+            "format_version": 1,
+            "created_at": datetime.now().isoformat(),
+            "eval_parameters": {
+                "project_name": self.config.trainer.project_name,
+                "experiment_name": self.config.trainer.experiment_name,
+                "env_name": self.config.trainer.get('eval_env_name'),
+                "env_tag": self.config.trainer.get('eval_env_tag'),
+                "model_path": self.config.actor_rollout_ref.model.path,
+                "validation_steps": int(self.config.trainer.validation_steps),
+                "val_env_groups": int(self.config.es_manager.val.env_groups),
+                "val_group_size": int(self.config.es_manager.val.group_size),
+                "max_turn": int(self.config.val_agent_proxy.max_turn),
+                "tensor_parallel_size": int(self.config.actor_rollout_ref.rollout.tensor_model_parallel_size),
+                "gpu_memory_utilization": float(self.config.actor_rollout_ref.rollout.gpu_memory_utilization),
+                "response_length": int(self.config.actor_rollout_ref.rollout.response_length),
+                "max_model_len": int(self.config.actor_rollout_ref.rollout.max_model_len),
+                "do_sample": bool(self.config.actor_rollout_ref.rollout.val_kwargs.do_sample),
+                "temperature": float(self.config.actor_rollout_ref.rollout.val_kwargs.temperature),
+                "cuda_visible_devices": self.config.system.CUDA_VISIBLE_DEVICES,
+                "n_gpus_per_node": int(self.config.trainer.n_gpus_per_node),
+            },
+            "artifacts": {
+                "detailed_json": self.config.trainer.get('eval_output_json'),
+                "params_json": self.config.trainer.get('eval_params_json'),
+                "summary_json": self.config.trainer.get('eval_summary_json'),
+                "log_file": self.config.trainer.get('eval_log_file'),
+            },
+            "resolved_config": self._to_jsonable(resolved_config),
+        }
+
+    def _write_eval_payload(self):
+        output_path = self.config.trainer.get('eval_output_json')
+        payload = getattr(self, '_latest_eval_payload', None)
+        if not output_path or payload is None:
+            return
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open('w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        print(f"[INFO] Detailed evaluation JSON saved to: {output_path}")
+
+    def _write_eval_params(self):
+        output_path = self.config.trainer.get('eval_params_json')
+        if not output_path:
+            return
+
+        payload = self._build_eval_params_payload()
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open('w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        print(f"[INFO] Eval parameters JSON saved to: {output_path}")
+
     def init_workers(self):
         """Init resource pool and worker group"""
         self.resource_pool_manager.create_resource_pool()
@@ -190,6 +338,8 @@ class RayAgentTrainer(VerlRayPPOTrainer):
     def _validate(self):
         reward_tensor_lst = []
         data_source_lst = []
+        collect_eval_payload = self._should_collect_eval_payload()
+        episode_records = []
 
         # Lists to collect samples for the table
         sample_inputs = []
@@ -198,6 +348,7 @@ class RayAgentTrainer(VerlRayPPOTrainer):
 
         env_metric_dict = {}
         for step in range(self.config.trainer.validation_steps):
+            print(f'[INFO] Validation step {step + 1}/{self.config.trainer.validation_steps}')
             # Store original inputs
             input_texts = ["" for _ in range(self.config.es_manager.val.env_groups * self.config.es_manager.val.group_size)]
             sample_inputs.extend(input_texts)
@@ -208,6 +359,8 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                 'recompute_log_prob': False,
                 'do_sample': self.config.actor_rollout_ref.rollout.val_kwargs.do_sample,
                 'validate': True,
+                'validation_step': step + 1,
+                'validation_steps': self.config.trainer.validation_steps,
             }
             test_gen_batch = DataProto(batch=None, non_tensor_batch=None, meta_info=meta_info)
             print(f'test_gen_batch meta info: {test_gen_batch.meta_info}')
@@ -221,6 +374,10 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                 if "val/" + key not in env_metric_dict:
                     env_metric_dict["val/" + key] = []
                 env_metric_dict["val/" + key].append(value)
+            for key, value in test_batch.meta_info.get('pass_at_k', {}).items():
+                if f"val/{key}" not in env_metric_dict:
+                    env_metric_dict[f"val/{key}"] = []
+                env_metric_dict[f"val/{key}"].append(value)
 
             # Store generated outputs
             output_ids = test_batch.batch['responses']
@@ -233,6 +390,13 @@ class RayAgentTrainer(VerlRayPPOTrainer):
             # Store scores
             scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
+            if collect_eval_payload:
+                step_records = deepcopy(test_batch.meta_info.get('episode_records', []))
+                for idx, record in enumerate(step_records):
+                    record['validation_step'] = step
+                    if idx < len(scores):
+                        record['score'] = scores[idx]
+                episode_records.extend(step_records)
 
             reward_tensor_lst.append(reward_tensor)
             data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
@@ -254,6 +418,10 @@ class RayAgentTrainer(VerlRayPPOTrainer):
         metric_dict = reduce_metrics(env_metric_dict)
         for data_source, rewards in data_source_reward.items():
             metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+
+        self._latest_eval_payload = None
+        if collect_eval_payload:
+            self._latest_eval_payload = self._build_eval_payload(metric_dict, episode_records)
 
         return metric_dict
 
@@ -295,93 +463,95 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                           default_backend=self.config.trainer.logger,
                           config=OmegaConf.to_container(self.config, resolve=True))
 
-        self.global_steps = 0
+        progress_bar = None
+        try:
+            self.global_steps = 0
 
-        # load checkpoint before doing anything
-        self._load_checkpoint()
+            # load checkpoint before doing anything
+            self._load_checkpoint()
 
-        # perform validation before training
-        # currently, we only support validation using the reward_function.
-        if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
-            val_metrics = self._validate()
-            pprint(f'Initial validation metrics: {val_metrics}')
-            logger.log(data=val_metrics, step=self.global_steps)
-            if self.config.trainer.get('val_only', False):
-                return
+            # perform validation before training
+            # currently, we only support validation using the reward_function.
+            if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
+                val_metrics = self._validate()
+                pprint(f'Initial validation metrics: {val_metrics}')
+                logger.log(data=val_metrics, step=self.global_steps)
+                if self.config.trainer.get('val_only', False):
+                    return
 
-        # add tqdm
-        progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+            # add tqdm
+            progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
 
-        # we start from step 1
-        self.global_steps += 1
-        last_val_metrics = None
+            # we start from step 1
+            self.global_steps += 1
+            last_val_metrics = None
 
-        def _process_batch_for_logging(batch):
-            inputs = batch.batch['input_ids']
-            inputs = [self.tokenizer.decode(input_ids, skip_special_tokens=True) for input_ids in inputs]
-            outputs = [""] * len(inputs)
-            scores = batch.batch['rm_scores'].sum(-1).cpu().tolist()
-            return inputs, outputs, scores
+            def _process_batch_for_logging(batch):
+                inputs = batch.batch['input_ids']
+                inputs = [self.tokenizer.decode(input_ids, skip_special_tokens=True) for input_ids in inputs]
+                outputs = [""] * len(inputs)
+                scores = batch.batch['rm_scores'].sum(-1).cpu().tolist()
+                return inputs, outputs, scores
 
-        def _filter_rollout(batch):
-            """filter rollout based on in-group max - in-group mean. We want those groups to have high-quality rollouts that deviates significantly from the mean"""
-            rollout_filter_ratio = self.config.actor_rollout_ref.rollout.rollout_filter_ratio
-            num_groups, group_size = self.config.es_manager.train.env_groups, self.config.es_manager.train.group_size
+            def _filter_rollout(batch):
+                """filter rollout based on in-group max - in-group mean. We want those groups to have high-quality rollouts that deviates significantly from the mean"""
+                rollout_filter_ratio = self.config.actor_rollout_ref.rollout.rollout_filter_ratio
+                num_groups, group_size = self.config.es_manager.train.env_groups, self.config.es_manager.train.group_size
 
-            rm_scores = batch.batch["original_rm_scores"].sum(dim=-1).view(num_groups, group_size)
-            in_group_std = rm_scores.std(dim=-1)
-            in_group_max = rm_scores.max(dim=-1).values
-            in_group_mean = rm_scores.mean(dim=-1)
-            if rollout_filter_ratio == 1:
-                return batch, {"rollout/in_group_std": in_group_std.mean(), "rollout/in_group_max": in_group_max.mean(), "rollout/in_group_mean": in_group_mean.mean(), "rollout/chosen_in_group_std": in_group_std.mean(), "rollout/chosen_in_group_max": in_group_max.mean(), "rollout/chosen_in_group_mean": in_group_mean.mean()}
+                rm_scores = batch.batch["original_rm_scores"].sum(dim=-1).view(num_groups, group_size)
+                in_group_std = rm_scores.std(dim=-1)
+                in_group_max = rm_scores.max(dim=-1).values
+                in_group_mean = rm_scores.mean(dim=-1)
+                if rollout_filter_ratio == 1:
+                    return batch, {"rollout/in_group_std": in_group_std.mean(), "rollout/in_group_max": in_group_max.mean(), "rollout/in_group_mean": in_group_mean.mean(), "rollout/chosen_in_group_std": in_group_std.mean(), "rollout/chosen_in_group_max": in_group_max.mean(), "rollout/chosen_in_group_mean": in_group_mean.mean()}
 
-            if self.config.actor_rollout_ref.rollout.rollout_filter_type == "std_rev":
-                top_groups = (-in_group_std).topk(int(rollout_filter_ratio * num_groups)).indices
-            elif self.config.actor_rollout_ref.rollout.rollout_filter_type == "std":
-                top_groups = in_group_std.topk(int(rollout_filter_ratio * num_groups)).indices
-            else:
-                raise ValueError(f"Invalid rollout filter type: {self.config.actor_rollout_ref.rollout.rollout_filter_type}")
-
-            mask = torch.zeros(num_groups, dtype=torch.bool)
-            mask[top_groups] = True
-            mask = mask.unsqueeze(1).expand(-1, group_size).flatten()
-
-            batch.batch = batch.batch[mask]
-
-            for key, value in batch.non_tensor_batch.items():
-                if isinstance(value, np.ndarray):
-                    batch.non_tensor_batch[key] = value[mask]
+                if self.config.actor_rollout_ref.rollout.rollout_filter_type == "std_rev":
+                    top_groups = (-in_group_std).topk(int(rollout_filter_ratio * num_groups)).indices
+                elif self.config.actor_rollout_ref.rollout.rollout_filter_type == "std":
+                    top_groups = in_group_std.topk(int(rollout_filter_ratio * num_groups)).indices
                 else:
-                    batch.non_tensor_batch[key] = [v for v, m in zip(value, mask) if m]
+                    raise ValueError(f"Invalid rollout filter type: {self.config.actor_rollout_ref.rollout.rollout_filter_type}")
 
-            metrics = {
-                "rollout/in_group_std": in_group_std.mean(),
-                "rollout/in_group_max": in_group_max.mean(),
-                "rollout/in_group_mean": in_group_mean.mean(),
-                "rollout/chosen_in_group_std": in_group_std[top_groups].mean(),
-                "rollout/chosen_in_group_max": in_group_max[top_groups].mean(),
-                "rollout/chosen_in_group_mean": in_group_mean[top_groups].mean()
-            }
-            return batch, metrics
+                mask = torch.zeros(num_groups, dtype=torch.bool)
+                mask[top_groups] = True
+                mask = mask.unsqueeze(1).expand(-1, group_size).flatten()
+
+                batch.batch = batch.batch[mask]
+
+                for key, value in batch.non_tensor_batch.items():
+                    if isinstance(value, np.ndarray):
+                        batch.non_tensor_batch[key] = value[mask]
+                    else:
+                        batch.non_tensor_batch[key] = [v for v, m in zip(value, mask) if m]
+
+                metrics = {
+                    "rollout/in_group_std": in_group_std.mean(),
+                    "rollout/in_group_max": in_group_max.mean(),
+                    "rollout/in_group_mean": in_group_mean.mean(),
+                    "rollout/chosen_in_group_std": in_group_std[top_groups].mean(),
+                    "rollout/chosen_in_group_max": in_group_max[top_groups].mean(),
+                    "rollout/chosen_in_group_mean": in_group_mean[top_groups].mean()
+                }
+                return batch, metrics
 
 
-        self.start_time = time.time()
-        for step in range(self.total_training_steps):
-            # metrics = {}
-            timing_raw = {}
+            self.start_time = time.time()
+            for step in range(self.total_training_steps):
+                # metrics = {}
+                timing_raw = {}
 
-            batch: DataProto = DataProto()
-            is_last_step = self.global_steps >= self.total_training_steps
+                batch: DataProto = DataProto()
+                is_last_step = self.global_steps >= self.total_training_steps
 
-            with _timer('step', timing_raw):
-                # generate a batch
-                with _timer('gen', timing_raw):
-                    batch = self.agent_proxy.rollout(batch, val=False)
-                    batch, metrics = _filter_rollout(batch)
-                    metrics.update({"train/" + key: value for key, value in batch.meta_info['metrics'].items()})
+                with _timer('step', timing_raw):
+                    # generate a batch
+                    with _timer('gen', timing_raw):
+                        batch = self.agent_proxy.rollout(batch, val=False)
+                        batch, metrics = _filter_rollout(batch)
+                        metrics.update({"train/" + key: value for key, value in batch.meta_info['metrics'].items()})
 
-                    inputs, outputs, scores = _process_batch_for_logging(batch)
-                    # self._maybe_log_generations(inputs=inputs, outputs=outputs, scores=scores, _type='train')
+                        inputs, outputs, scores = _process_batch_for_logging(batch)
+                        # self._maybe_log_generations(inputs=inputs, outputs=outputs, scores=scores, _type='train')
 
 
 
@@ -524,25 +694,28 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                     with _timer('save_checkpoint', timing_raw):
                         self._save_checkpoint()
 
-            # collect metrics
-            metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
-            metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-            # TODO: implement actual tflpo and theoretical tflpo
-            n_gpus = self.resource_pool_manager.get_n_gpus()
-            metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                # collect metrics
+                metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+                # TODO: implement actual tflpo and theoretical tflpo
+                n_gpus = self.resource_pool_manager.get_n_gpus()
+                metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
-            # add another timing metric: total time
-            metrics.update({"timing_s/total": time.time() - self.start_time})
-            # TODO: make a canonical logger that supports various backend
-            logger.log(data=metrics, step=self.global_steps)
+                # add another timing metric: total time
+                metrics.update({"timing_s/total": time.time() - self.start_time})
+                # TODO: make a canonical logger that supports various backend
+                logger.log(data=metrics, step=self.global_steps)
 
-            if is_last_step:
-                pprint(f'Final validation metrics: {last_val_metrics}')
+                if is_last_step:
+                    pprint(f'Final validation metrics: {last_val_metrics}')
+                    return
+
+                progress_bar.update(1)
+                self.global_steps += 1
+        finally:
+            if progress_bar is not None:
                 progress_bar.close()
-                return
-
-            progress_bar.update(1)
-            self.global_steps += 1
+            logger.finish(suppress_exceptions=True)
 
     def _save_checkpoint(self):
         """ 

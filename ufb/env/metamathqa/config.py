@@ -1,18 +1,6 @@
 from typing import Optional, List, Dict
 from dataclasses import dataclass, field
-
-# Default pool of one-bit feedback prompts.
-# All convey the same 1-bit signal (incorrect) with different wording.
-DEFAULT_FEEDBACK_POOL = [
-    "Incorrect. Please think again.",
-    "That's wrong, try again.",
-    "Not quite right. Please try again.",
-    "Your answer is incorrect.",
-    "Wrong answer. Give it another try.",
-    "That is not correct. Try again.",
-    "Incorrect. Think carefully and try again.",
-    "No, that's not right. Please reconsider.",
-]
+from ufb.env.base import DEFAULT_FEEDBACK_POOL
 
 @dataclass
 class MetaMathQAEnvConfig:

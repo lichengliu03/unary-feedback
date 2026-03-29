@@ -1,5 +1,8 @@
+# @package _global_
+
 defaults:
   - /base
+  - _self_
 
 es_manager:
   train:

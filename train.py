@@ -130,15 +130,29 @@ def add_dependency(config):
     config.actor_rollout_ref.actor.ppo_mini_batch_size = config.ppo_mini_batch_size
     config.critic.ppo_mini_batch_size = config.ppo_mini_batch_size
 
-    if config.micro_batch_size_per_gpu is None:
-        config.micro_batch_size_per_gpu = config.actor_rollout_ref.actor.ppo_mini_batch_size // config.trainer.n_gpus_per_node
-        print(f"config.micro_batch_size_per_gpu: {config.micro_batch_size_per_gpu}")
-        
-    config.actor_rollout_ref.actor.micro_batch_size_per_gpu = config.micro_batch_size_per_gpu
-    config.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu = config.micro_batch_size_per_gpu
-    config.actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu = config.micro_batch_size_per_gpu
-    config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu = config.micro_batch_size_per_gpu
-    config.critic.ppo_micro_batch_size_per_gpu = config.micro_batch_size_per_gpu
+    legacy_micro_batch_size_per_gpu = config.get('micro_batch_size_per_gpu', None)
+
+    if config.get('ppo_micro_batch_size_per_gpu', None) is None:
+        if legacy_micro_batch_size_per_gpu is not None:
+            config.ppo_micro_batch_size_per_gpu = legacy_micro_batch_size_per_gpu
+        else:
+            config.ppo_micro_batch_size_per_gpu = (
+                config.actor_rollout_ref.actor.ppo_mini_batch_size // config.trainer.n_gpus_per_node
+            )
+        print(f"config.ppo_micro_batch_size_per_gpu: {config.ppo_micro_batch_size_per_gpu}")
+
+    if config.get('log_prob_micro_batch_size_per_gpu', None) is None:
+        if legacy_micro_batch_size_per_gpu is not None:
+            config.log_prob_micro_batch_size_per_gpu = legacy_micro_batch_size_per_gpu
+        else:
+            config.log_prob_micro_batch_size_per_gpu = config.ppo_micro_batch_size_per_gpu
+        print(f"config.log_prob_micro_batch_size_per_gpu: {config.log_prob_micro_batch_size_per_gpu}")
+
+    config.actor_rollout_ref.actor.micro_batch_size_per_gpu = config.ppo_micro_batch_size_per_gpu
+    config.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu = config.ppo_micro_batch_size_per_gpu
+    config.actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu = config.log_prob_micro_batch_size_per_gpu
+    config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu = config.log_prob_micro_batch_size_per_gpu
+    config.critic.ppo_micro_batch_size_per_gpu = config.ppo_micro_batch_size_per_gpu
 
     return config
 

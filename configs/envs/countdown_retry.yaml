@@ -1,0 +1,22 @@
+# @package _global_
+
+# Countdown with retry: single-turn env, each attempt = 1 turn
+# max_turn = max_attempts = 5
+defaults:
+  - /base
+  - _self_
+
+agent_proxy:
+  max_turn: 5
+  max_actions_per_turn: 1
+
+val_agent_proxy:
+  max_turn: 5
+
+es_manager:
+  train:
+    env_configs:
+      tags: ["CountdownRetry"]
+  val:
+    env_configs:
+      tags: ["CountdownRetry"]

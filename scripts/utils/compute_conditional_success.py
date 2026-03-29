@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
 Compute conditional success rates: Succ@k | fail@(k-1)
+
+Supports both:
+1. New summary JSONs with a top-level ``base_model`` entry.
+2. Old checkpoint JSONs with top-level ``step_<n>`` entries.
+
+Formula:
+    Succ@k | fail@(k-1) = (pass@k - pass@(k-1)) / (1 - pass@(k-1))
 """
 
 import json
@@ -8,247 +15,186 @@ import sys
 from pathlib import Path
 
 
-def compute_conditional_success(results_json):
-    """
-    Compute conditional success rates from pass@k metrics.
-
-    Succ@k | fail@(k-1) = P(success at turn k | failed at turn k-1)
-                         = (pass@k - pass@(k-1)) / (1 - pass@(k-1))
-    """
-    with open(results_json, 'r') as f:
-        data = json.load(f)
-
-    all_results = {}
-
-    for step_key in sorted(data.keys(), key=lambda x: int(x.split('_')[1])):
-        step_data = data[step_key]
-        step_num = int(step_key.split('_')[1])
-
-        if 'pass_at_k' not in step_data:
-            continue
-
-        pass_at_k = step_data['pass_at_k']
-
-        # Extract pass@k values for k=1,2,3,4,5
-        pass_values = {}
-        for k in [1, 2, 3, 4, 5]:
-            key = f'pass@{k}'
-            if key in pass_at_k:
-                pass_values[k] = pass_at_k[key]
-
-        # Compute conditional success rates
-        conditional_success = {}
-
-        for k in [2, 3, 4, 5]:
-            if k in pass_values and (k-1) in pass_values:
-                pass_k = pass_values[k]
-                pass_k_minus_1 = pass_values[k-1]
-
-                # Probability of failing at turn k-1
-                fail_k_minus_1 = 1 - pass_k_minus_1
-
-                if fail_k_minus_1 > 0:
-                    # Probability of succeeding at turn k given failed at k-1
-                    succ_k_given_fail_k_minus_1 = (pass_k - pass_k_minus_1) / fail_k_minus_1
-                    conditional_success[f'Succ@{k}|fail@{k-1}'] = succ_k_given_fail_k_minus_1
-                else:
-                    # Everyone succeeded by turn k-1, no data for this condition
-                    conditional_success[f'Succ@{k}|fail@{k-1}'] = None
-
-        all_results[step_key] = {
-            'step': step_num,
-            'pass_at_k': pass_values,
-            'conditional_success': conditional_success
-        }
-
-    return all_results
+PASS_KEYS = [1, 2, 3, 4, 5]
+COND_KEYS = [2, 3, 4, 5]
 
 
-def print_results(results, experiment_name):
-    """Print conditional success rates in a nice format."""
-    print(f"\n{'='*80}")
-    print(f"Conditional Success Rates: {experiment_name}")
-    print(f"{'='*80}\n")
-
-    for step_key in sorted(results.keys(), key=lambda x: int(x.split('_')[1])):
-        data = results[step_key]
-        step = data['step']
-
-        print(f"Step {step}:")
-        print(f"  Pass@k:")
-        for k in [1, 2, 3, 4, 5]:
-            if k in data['pass_at_k']:
-                print(f"    pass@{k}: {data['pass_at_k'][k]:.4f} ({data['pass_at_k'][k]*100:.2f}%)")
-
-        print(f"  Conditional Success (Succ@k | fail@(k-1)):")
-        for key in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
-            if key in data['conditional_success']:
-                val = data['conditional_success'][key]
-                if val is not None:
-                    print(f"    {key}: {val:.4f} ({val*100:.2f}%)")
-                else:
-                    print(f"    {key}: N/A (all succeeded)")
-        print()
+def _load_json(path):
+    with open(path, 'r') as f:
+        return json.load(f)
 
 
-def compute_conditional_success_base(results_json):
-    """
-    Compute conditional success rates for base model.
-    Base model JSON has different structure with 'base_model' key.
-    """
-    with open(results_json, 'r') as f:
-        data = json.load(f)
+def _extract_ordered_entries(data):
+    if 'base_model' in data:
+        return [('base_model', data['base_model'])]
 
-    if 'base_model' not in data:
+    step_entries = []
+    for key, value in data.items():
+        if key.startswith('step_'):
+            try:
+                step_num = int(key.split('_', 1)[1])
+            except ValueError:
+                continue
+            step_entries.append((key, step_num, value))
+    step_entries.sort(key=lambda item: item[1])
+    return [(key, value) for key, _, value in step_entries]
+
+
+def _compute_single_entry(label, entry):
+    if 'pass_at_k' not in entry:
         return None
 
-    base_data = data['base_model']
-
-    if 'pass_at_k' not in base_data:
-        return None
-
-    pass_at_k = base_data['pass_at_k']
-
-    # Extract pass@k values for k=1,2,3,4,5
+    pass_at_k = entry['pass_at_k']
     pass_values = {}
-    for k in [1, 2, 3, 4, 5]:
+    for k in PASS_KEYS:
         key = f'pass@{k}'
         if key in pass_at_k:
             pass_values[k] = pass_at_k[key]
 
-    # Compute conditional success rates
     conditional_success = {}
+    for k in COND_KEYS:
+        if k not in pass_values or (k - 1) not in pass_values:
+            continue
+        pass_k = pass_values[k]
+        pass_prev = pass_values[k - 1]
+        fail_prev = 1 - pass_prev
+        if fail_prev > 0:
+            conditional_success[f'Succ@{k}|fail@{k-1}'] = (pass_k - pass_prev) / fail_prev
+        else:
+            conditional_success[f'Succ@{k}|fail@{k-1}'] = None
 
-    for k in [2, 3, 4, 5]:
-        if k in pass_values and (k-1) in pass_values:
-            pass_k = pass_values[k]
-            pass_k_minus_1 = pass_values[k-1]
-
-            # Probability of failing at turn k-1
-            fail_k_minus_1 = 1 - pass_k_minus_1
-
-            if fail_k_minus_1 > 0:
-                # Probability of succeeding at turn k given failed at k-1
-                succ_k_given_fail_k_minus_1 = (pass_k - pass_k_minus_1) / fail_k_minus_1
-                conditional_success[f'Succ@{k}|fail@{k-1}'] = succ_k_given_fail_k_minus_1
-            else:
-                # Everyone succeeded by turn k-1, no data for this condition
-                conditional_success[f'Succ@{k}|fail@{k-1}'] = None
-
+    step_or_base = 0 if label == 'base_model' else int(label.split('_', 1)[1])
     return {
-        'base_model': {
-            'step': 0,
-            'pass_at_k': pass_values,
-            'conditional_success': conditional_success
-        }
+        'step': step_or_base,
+        'pass_at_k': pass_values,
+        'conditional_success': conditional_success,
     }
 
 
-def print_results_base(results):
-    """Print conditional success rates for base model."""
-    print(f"\n{'='*80}")
-    print(f"Conditional Success Rates: Base Model")
-    print(f"{'='*80}\n")
+def compute_conditional_success(results_json):
+    data = _load_json(results_json)
+    results = {}
+    for label, entry in _extract_ordered_entries(data):
+        computed = _compute_single_entry(label, entry)
+        if computed is not None:
+            results[label] = computed
+    return results
 
-    data = results['base_model']
 
-    print(f"Base Model (Before Training):")
-    print(f"  Pass@k:")
-    for k in [1, 2, 3, 4, 5]:
-        if k in data['pass_at_k']:
-            print(f"    pass@{k}: {data['pass_at_k'][k]:.4f} ({data['pass_at_k'][k]*100:.2f}%)")
+def print_results(results, experiment_name):
+    print(f"\n{'=' * 80}")
+    print(f"Conditional Success Rates: {experiment_name}")
+    print(f"{'=' * 80}\n")
 
-    print(f"  Conditional Success (Succ@k | fail@(k-1)):")
-    for key in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
-        if key in data['conditional_success']:
-            val = data['conditional_success'][key]
-            if val is not None:
-                print(f"    {key}: {val:.4f} ({val*100:.2f}%)")
-            else:
+    def _sort_key(item_key):
+        return -1 if item_key == 'base_model' else int(item_key.split('_', 1)[1])
+
+    for label in sorted(results.keys(), key=_sort_key):
+        data = results[label]
+        title = "Base Model" if label == 'base_model' else f"Step {data['step']}"
+        print(f"{title}:")
+        print("  Pass@k:")
+        for k in PASS_KEYS:
+            if k in data['pass_at_k']:
+                value = data['pass_at_k'][k]
+                print(f"    pass@{k}: {value:.4f} ({value * 100:.2f}%)")
+
+        print("  Conditional Success (Succ@k | fail@(k-1)):")
+        for key in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
+            if key not in data['conditional_success']:
+                continue
+            value = data['conditional_success'][key]
+            if value is None:
                 print(f"    {key}: N/A (all succeeded)")
-    print()
+            else:
+                print(f"    {key}: {value:.4f} ({value * 100:.2f}%)")
+        print()
+
+
+def compare_results(lhs_results, rhs_results, lhs_name, rhs_name):
+    print(f"\n{'=' * 80}")
+    print(f"Comparison: {rhs_name} vs {lhs_name}")
+    print(f"{'=' * 80}\n")
+
+    shared_labels = [label for label in lhs_results.keys() if label in rhs_results]
+    def _sort_key(item_key):
+        return -1 if item_key == 'base_model' else int(item_key.split('_', 1)[1])
+
+    for label in sorted(shared_labels, key=_sort_key):
+        title = "Base Model" if label == 'base_model' else f"Step {lhs_results[label]['step']}"
+        print(f"{title}:")
+        for metric in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
+            lhs_val = lhs_results[label]['conditional_success'].get(metric)
+            rhs_val = rhs_results[label]['conditional_success'].get(metric)
+            if lhs_val is None or rhs_val is None:
+                continue
+            improvement = rhs_val - lhs_val
+            improvement_pct = (rhs_val / lhs_val - 1) * 100 if lhs_val > 0 else float('inf')
+            print(f"  {metric}:")
+            print(f"    {lhs_name}: {lhs_val:.4f} ({lhs_val * 100:.2f}%)")
+            print(f"    {rhs_name}: {rhs_val:.4f} ({rhs_val * 100:.2f}%)")
+            print(f"    Improvement: {improvement:+.4f} ({improvement_pct:+.2f}%)")
+        print()
+
+
+def _default_output_path(input_path):
+    input_path = Path(input_path)
+    if input_path.name.endswith('.summary.json'):
+        return input_path.with_name(input_path.name.replace('.summary.json', '.conditional_success.json'))
+    return input_path.with_suffix('.conditional_success.json')
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python compute_conditional_success.py <1turn_json> <5turn_json> [base_model_json]")
-        print("Example: python compute_conditional_success.py qwen_1turn_new.json qwen_5turn_new.json qwen25_3b_base.json")
+        print("Usage: python compute_conditional_success.py <results_json> [comparison_json] [output_json]")
+        print("Example: python compute_conditional_success.py eval_results/run.summary.json")
+        print("Example: python compute_conditional_success.py one_turn.json five_turn.json eval_results/conditional_success.json")
         sys.exit(1)
 
-    json_1turn = sys.argv[1]
-    json_5turn = sys.argv[2] if len(sys.argv) > 2 else None
-    json_base = sys.argv[3] if len(sys.argv) > 3 else None
+    primary_json = Path(sys.argv[1])
+    comparison_json = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].endswith('.json') else None
+    output_json = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 
-    # Check files exist
-    if not Path(json_1turn).exists():
-        print(f"Error: File not found: {json_1turn}")
+    if not primary_json.exists():
+        print(f"Error: File not found: {primary_json}")
         sys.exit(1)
 
-    # Compute for 1-turn
-    results_1turn = compute_conditional_success(json_1turn)
-    print_results(results_1turn, "1-Turn Training")
+    primary_results = compute_conditional_success(primary_json)
+    if not primary_results:
+        print(f"Error: No pass@k data found in {primary_json}")
+        sys.exit(1)
 
-    # Compute for 5-turn if provided
-    results_5turn = None
-    if json_5turn:
-        if not Path(json_5turn).exists():
-            print(f"Error: File not found: {json_5turn}")
-            sys.exit(1)
-
-        results_5turn = compute_conditional_success(json_5turn)
-        print_results(results_5turn, "5-Turn Training")
-
-        # Print comparison
-        print(f"\n{'='*80}")
-        print("Comparison: 5-Turn vs 1-Turn Improvement")
-        print(f"{'='*80}\n")
-
-        for step_key in sorted(results_1turn.keys(), key=lambda x: int(x.split('_')[1])):
-            step = results_1turn[step_key]['step']
-            print(f"Step {step}:")
-
-            for metric in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
-                if step_key in results_5turn:
-                    val_1turn = results_1turn[step_key]['conditional_success'].get(metric)
-                    val_5turn = results_5turn[step_key]['conditional_success'].get(metric)
-
-                    if val_1turn is not None and val_5turn is not None:
-                        improvement = val_5turn - val_1turn
-                        improvement_pct = (val_5turn / val_1turn - 1) * 100 if val_1turn > 0 else float('inf')
-                        print(f"  {metric}:")
-                        print(f"    1-Turn: {val_1turn:.4f} ({val_1turn*100:.2f}%)")
-                        print(f"    5-Turn: {val_5turn:.4f} ({val_5turn*100:.2f}%)")
-                        print(f"    Improvement: {improvement:+.4f} ({improvement_pct:+.2f}%)")
-            print()
-
-    # Compute for base model if provided
-    results_base = None
-    if json_base:
-        if not Path(json_base).exists():
-            print(f"Error: File not found: {json_base}")
-            sys.exit(1)
-
-        results_base = compute_conditional_success_base(json_base)
-        if results_base:
-            print_results_base(results_base)
-
-    # Save to JSON
-    output_dir = Path('eval_results')
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / 'conditional_success_rates.json'
+    print_results(primary_results, primary_json.name)
 
     output_data = {
-        '1turn': results_1turn
+        'primary': {
+            'input_file': str(primary_json),
+            'results': primary_results,
+        }
     }
-    if results_5turn:
-        output_data['5turn'] = results_5turn
-    if results_base:
-        output_data['base'] = results_base
 
-    with open(output_file, 'w') as f:
+    if comparison_json is not None:
+        if not comparison_json.exists():
+            print(f"Error: File not found: {comparison_json}")
+            sys.exit(1)
+        comparison_results = compute_conditional_success(comparison_json)
+        if not comparison_results:
+            print(f"Error: No pass@k data found in {comparison_json}")
+            sys.exit(1)
+        print_results(comparison_results, comparison_json.name)
+        compare_results(primary_results, comparison_results, primary_json.name, comparison_json.name)
+        output_data['comparison'] = {
+            'input_file': str(comparison_json),
+            'results': comparison_results,
+        }
+
+    if output_json is None:
+        output_json = _default_output_path(primary_json)
+
+    with open(output_json, 'w') as f:
         json.dump(output_data, f, indent=2)
 
-    print(f"Results saved to: {output_file}")
+    print(f"Results saved to: {output_json}")
 
 
 if __name__ == '__main__':

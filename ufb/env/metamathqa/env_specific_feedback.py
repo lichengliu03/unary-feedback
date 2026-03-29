@@ -1,13 +1,10 @@
-import gym
-from gym import spaces
-import numpy as np
-from datasets import load_dataset
 import re
 import random
 from ufb.env.base import BaseLanguageBasedEnv
 from ufb.utils import all_seed
 from .config import MetaMathQAEnvConfig
 from collections import defaultdict
+from .dataset_utils import load_filtered_metamathqa_dataset
 
 
 class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
@@ -23,9 +20,10 @@ class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
         super(MetaMathQAEnvSpecificFeedback, self).__init__()
 
         self.config = config
-        self.dataset = load_dataset(path=self.config.dataset_path, cache_dir=self.config.cache_dir)
-        self.dataset = self.dataset[self.config.split].filter(
-            lambda example: example['type'].startswith('MATH_')
+        self.dataset = load_filtered_metamathqa_dataset(
+            self.config.dataset_path,
+            self.config.cache_dir,
+            self.config.split,
         )
         self.current_question_idx = None
         self.current_question = None
@@ -95,6 +93,11 @@ class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
     def step(self, action):
         is_correct, is_valid = self._check_answer(action)
         reward = 1.0 / (2 ** self.step_num) if is_correct else 0.0
+        info = {
+            "action_is_valid": is_valid,
+            "success": is_correct,
+            "per_question_unique_answers_ratio": 0.0
+        }
         if is_valid:
             minimal_normalized_action = self._minimal_normalize_answer(action)
             self.unique_answers_count[minimal_normalized_action] += 1
@@ -104,11 +107,7 @@ class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
             if self.total_valid_answers > 0:
                 unique_answers_proportion = len(self.unique_answers_count) / self.total_valid_answers
             self.step_num += 1
-            info = {
-                "action_is_valid": is_valid,
-                "success": is_correct,
-                "per_question_unique_answers_ratio": unique_answers_proportion
-            }
+            info["per_question_unique_answers_ratio"] = unique_answers_proportion
 
         if is_correct or self.step_num >= self.max_steps:
             T = self.total_valid_answers
@@ -117,7 +116,7 @@ class MetaMathQAEnvSpecificFeedback(BaseLanguageBasedEnv):
             total_reward = sum(self._step_rewards) - penalty
             info["global_repetition_penalty"] = penalty
             info["final_total_reward"] = total_reward
-            observation = "Correct!"
+            observation = "Correct!" if is_correct else f"Maximum attempts reached. The correct answer was: {self.correct_answer}"
             done = True
             self.render_cache = observation
             return self.render_cache, total_reward, done, info
