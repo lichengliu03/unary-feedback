@@ -8,15 +8,15 @@ Supports both:
 
 Formula:
     Succ@k | fail@(k-1) = (pass@k - pass@(k-1)) / (1 - pass@(k-1))
+
+For the current eval pipeline, ``pass@k`` is interpreted as attempt-level
+cumulative success within the first ``k`` attempts.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
-
-
-PASS_KEYS = [1, 2, 3, 4, 5]
-COND_KEYS = [2, 3, 4, 5]
 
 
 def _load_json(path):
@@ -46,14 +46,16 @@ def _compute_single_entry(label, entry):
 
     pass_at_k = entry['pass_at_k']
     pass_values = {}
-    for k in PASS_KEYS:
-        key = f'pass@{k}'
-        if key in pass_at_k:
-            pass_values[k] = pass_at_k[key]
+    for key, value in pass_at_k.items():
+        match = re.fullmatch(r'pass@(\d+)', key)
+        if match is None:
+            continue
+        pass_values[int(match.group(1))] = value
+    pass_values = dict(sorted(pass_values.items()))
 
     conditional_success = {}
-    for k in COND_KEYS:
-        if k not in pass_values or (k - 1) not in pass_values:
+    for k in sorted(pass_values):
+        if k <= 1 or (k - 1) not in pass_values:
             continue
         pass_k = pass_values[k]
         pass_prev = pass_values[k - 1]
@@ -93,16 +95,15 @@ def print_results(results, experiment_name):
         data = results[label]
         title = "Base Model" if label == 'base_model' else f"Step {data['step']}"
         print(f"{title}:")
-        print("  Pass@k:")
-        for k in PASS_KEYS:
-            if k in data['pass_at_k']:
-                value = data['pass_at_k'][k]
-                print(f"    pass@{k}: {value:.4f} ({value * 100:.2f}%)")
+        print("  Pass@k (attempt-level):")
+        for k, value in sorted(data['pass_at_k'].items()):
+            print(f"    pass@{k}: {value:.4f} ({value * 100:.2f}%)")
 
-        print("  Conditional Success (Succ@k | fail@(k-1)):")
-        for key in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
-            if key not in data['conditional_success']:
-                continue
+        print("  Conditional Success (attempt-level Succ@k | fail@(k-1)):")
+        for key in sorted(
+            data['conditional_success'],
+            key=lambda item: int(item.split('@', 1)[1].split('|', 1)[0]),
+        ):
             value = data['conditional_success'][key]
             if value is None:
                 print(f"    {key}: N/A (all succeeded)")
@@ -123,7 +124,11 @@ def compare_results(lhs_results, rhs_results, lhs_name, rhs_name):
     for label in sorted(shared_labels, key=_sort_key):
         title = "Base Model" if label == 'base_model' else f"Step {lhs_results[label]['step']}"
         print(f"{title}:")
-        for metric in ['Succ@2|fail@1', 'Succ@3|fail@2', 'Succ@4|fail@3', 'Succ@5|fail@4']:
+        shared_metrics = sorted(
+            set(lhs_results[label]['conditional_success']) & set(rhs_results[label]['conditional_success']),
+            key=lambda item: int(item.split('@', 1)[1].split('|', 1)[0]),
+        )
+        for metric in shared_metrics:
             lhs_val = lhs_results[label]['conditional_success'].get(metric)
             rhs_val = rhs_results[label]['conditional_success'].get(metric)
             if lhs_val is None or rhs_val is None:

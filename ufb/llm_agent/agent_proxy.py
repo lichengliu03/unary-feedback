@@ -145,16 +145,91 @@ class LLMAgentProxy:
 		env_outputs = es_manager.reset(seed=seed)
 		max_turns = self.config.val_agent_proxy.max_turn if val else self.config.agent_proxy.max_turn
 		use_rollout_session = isinstance(self.actor_wg, RayWorkerGroup) and hasattr(self.actor_wg, "start_rollout_session")
+		show_eval_progress = bool(val and self.config.trainer.get('eval_show_progress', False))
+		progress_interval = int(self.config.trainer.get('eval_progress_interval', 1) or 1)
+		progress_interval = max(progress_interval, 1)
+		progress_start_time = time.time() if show_eval_progress else None
+		total_by_tag = {}
+		completed_tags = set()
+		last_printed_turn_idx = -1
 
 		# Track which turn each environment succeeds in (0-indexed, -1 means never succeeded)
 		num_envs = len(es_manager.envs)
 		success_at_turn = [-1] * num_envs
+		last_turn_idx = -1
+
+		if show_eval_progress:
+			for entry in es_manager.envs:
+				tag = entry['tag']
+				total_by_tag[tag] = total_by_tag.get(tag, 0) + 1
+			env_breakdown = ", ".join(f"{tag}={count}" for tag, count in total_by_tag.items())
+			print(
+				f"[EVAL] Validation rollout started | total_envs={num_envs} | "
+				f"max_turns={max_turns} | envs: {env_breakdown}"
+			)
+
+		def _format_elapsed(seconds):
+			total_seconds = max(int(seconds), 0)
+			hours = total_seconds // 3600
+			minutes = (total_seconds % 3600) // 60
+			secs = total_seconds % 60
+			return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+		def _print_eval_progress(turn_idx, newly_done=0, force=False):
+			nonlocal last_printed_turn_idx
+
+			if not show_eval_progress:
+				return
+			turn_number = turn_idx + 1
+			if turn_idx == last_printed_turn_idx:
+				return
+			if (not force) and (turn_number % progress_interval != 0):
+				return
+
+			done_by_tag = {}
+			success_by_tag = {}
+			done_total = 0
+			success_total = 0
+			for entry in es_manager.envs:
+				tag = entry['tag']
+				status = entry['status']
+				done = int(status.terminated)
+				success = int(status.terminated and not status.truncated)
+				done_by_tag[tag] = done_by_tag.get(tag, 0) + done
+				success_by_tag[tag] = success_by_tag.get(tag, 0) + success
+				done_total += done
+				success_total += success
+
+			elapsed = time.time() - progress_start_time if progress_start_time is not None else 0.0
+			elapsed_hms = _format_elapsed(elapsed)
+			env_parts = []
+			for tag, total in total_by_tag.items():
+				done = done_by_tag.get(tag, 0)
+				success = success_by_tag.get(tag, 0)
+				active = total - done
+				env_parts.append(f"{tag}: done={done}/{total}, succ={success}, active={active}")
+				if done == total and tag not in completed_tags:
+					completed_tags.add(tag)
+					print(
+						f"[EVAL] Environment completed | tag={tag} | "
+						f"done={done}/{total} | elapsed={elapsed:.1f}s ({elapsed_hms})"
+					)
+
+			done_pct = (done_total / num_envs) if num_envs > 0 else 0.0
+			print(
+				f"[EVAL] Turn {turn_number}/{max_turns} | done={done_total}/{num_envs} ({done_pct:.1%}) | "
+				f"succ={success_total} | newly_done={newly_done} | elapsed={elapsed:.1f}s ({elapsed_hms}) | "
+				+ " ; ".join(env_parts)
+			)
+			last_printed_turn_idx = turn_idx
 
 		if use_rollout_session:
 			self.actor_wg.start_rollout_session()
 
 		try:
 			for i in range(max_turns):
+				last_turn_idx = i
+				done_before = sum(int(entry['status'].terminated) for entry in es_manager.envs)
 				lm_inputs: DataProto = ctx_manager.get_lm_inputs(env_outputs, prepare_for_update=False)
 				lm_inputs.meta_info = dataproto.meta_info # TODO: setup vllm early stop when max length is reached. make sure this can be done
 				lm_outputs: DataProto = self.generate_sequences(lm_inputs)
@@ -169,11 +244,18 @@ class LLMAgentProxy:
 					if success_at_turn[env_id] == -1 and status.terminated and not status.truncated:
 						success_at_turn[env_id] = i
 
+				done_after = sum(int(entry['status'].terminated) for entry in es_manager.envs)
+				_print_eval_progress(i, newly_done=done_after - done_before)
+
 				if len(env_outputs) == 0: # all finished
 					break
 		finally:
 			if use_rollout_session:
 				self.actor_wg.end_rollout_session()
+
+		if show_eval_progress:
+			final_turn_idx = last_turn_idx if last_turn_idx >= 0 else 0
+			_print_eval_progress(final_turn_idx, newly_done=0, force=True)
 
 		rollout_states = es_manager.get_rollout_states()
 		rollouts = ctx_manager.formulate_rollouts(rollout_states)

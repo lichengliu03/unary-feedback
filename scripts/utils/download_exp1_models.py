@@ -27,7 +27,7 @@ MODEL_SPECS = {
     },
     "webshop": {
         "kind": "checkpoint",
-        "repo_id": "zihanwang314/unary-feedback-checkpoints",
+        "repo_id": "zihanwang314/unary-feedback",
         "repo_type": "model",
         "local_dir": EXP1_ROOT / "webshop_raw",
         "allow_patterns": ["ufb_exp/webshop_qwen25_3b_one_bit_2attempts_7turns/**"],

@@ -106,6 +106,8 @@ trainer:
   eval_summary_json: null
   eval_env_name: null
   eval_env_tag: null
+  eval_show_progress: False
+  eval_progress_interval: 1
   val_before_train: True
   n_gpus_per_node: 2
   test_freq: 10

@@ -81,8 +81,16 @@ class EnvStateManager:
                         fixed_feedback=retry_cfg.get('fixed_feedback', None),
                         reward_decay_base=retry_cfg.get('reward_decay_base', 2.0),
                     )
-                entry = {'tag': tag, 'group_id': env_id // self.group_size, 'env_id': env_id,
-                        'env': env_obj, 'config': env_config, 'status': EnvStatus(), 'max_actions_per_traj': max_actions_per_traj}
+                entry = {
+                        'tag': tag,
+                        'group_id': env_id // self.group_size,
+                        'env_id': env_id,
+                        'env': env_obj,
+                        'config': env_config,
+                        'status': EnvStatus(),
+                        'max_actions_per_traj': max_actions_per_traj,
+                        'count_invalid_as_attempt': bool(getattr(cfg_template, 'count_invalid_as_attempt', False)),
+                }
                 env_list.append(entry)
             done_groups += n_group
         return env_list
@@ -143,9 +151,23 @@ class EnvStateManager:
                     break
             return acc_reward, turn_info, turn_done, executed_actions
 
-        def _log_env_state(status, history, cur_obs, max_actions_per_traj, executed_actions, all_actions, acc_reward, turn_done, turn_info, env_input):
+        def _log_env_state(
+            status,
+            history,
+            cur_obs,
+            max_actions_per_traj,
+            executed_actions,
+            all_actions,
+            acc_reward,
+            turn_done,
+            turn_info,
+            env_input,
+            consumed_actions_count=None,
+        ):
             obs = self._handle_mm_state(cur_obs)
-            status.num_actions += len(executed_actions)
+            if consumed_actions_count is None:
+                consumed_actions_count = len(executed_actions)
+            status.num_actions += consumed_actions_count
             status.rewards.append(acc_reward) # NOTE use turn-wise acc_reward
             actions_left = max_actions_per_traj - status.num_actions
             # RetryWrapper sets info["retry"]=True when the inner env failed
@@ -177,11 +199,36 @@ class EnvStateManager:
 
             # execute actions in envs
             valid_actions = self._extract_map_valid_actions(entry, env_input['actions'])
-            acc_reward, turn_info, turn_done, executed_actions = _execute_actions(env, valid_actions[:actions_left_before])
+            executed_actions = []
+            consumed_actions_count = 0
+            invalid_format_attempt = bool(entry.get('count_invalid_as_attempt', False) and not valid_actions)
+            if invalid_format_attempt:
+                turn_info = {
+                    "action_is_valid": False,
+                    "success": False,
+                    "invalid_format": True,
+                    "counted_as_attempt": True,
+                }
+                consumed_actions_count = 1
+            else:
+                acc_reward, turn_info, turn_done, executed_actions = _execute_actions(env, valid_actions[:actions_left_before])
+                consumed_actions_count = len(executed_actions)
             if len(valid_actions) != len(env_input['actions']) or not valid_actions:
                 self.rollout_cache[env_id]["penalty"] += self.sys_config.es_manager.format_penalty
 
-            status, history = _log_env_state(entry['status'], self.rollout_cache[env_id]['history'], entry['env'].render(), entry['max_actions_per_traj'], executed_actions, valid_actions, acc_reward, turn_done, turn_info, env_input)
+            status, history = _log_env_state(
+                entry['status'],
+                self.rollout_cache[env_id]['history'],
+                entry['env'].render(),
+                entry['max_actions_per_traj'],
+                executed_actions,
+                valid_actions,
+                acc_reward,
+                turn_done,
+                turn_info,
+                env_input,
+                consumed_actions_count=consumed_actions_count,
+            )
             entry['status'] = status
             is_retry = turn_info.get('retry', False)
             # If retry was triggered mid-turn (e.g. env failure), reset action counter
