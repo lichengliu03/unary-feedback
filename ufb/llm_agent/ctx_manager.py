@@ -3,11 +3,13 @@ This is the context manager for the LLM agent.
 author: Kangrui Wang, Zihan Wang
 date: 2025-03-30
 """
-import torch
-import numpy as np
-from typing import List, Dict, Any, Optional, Union
-from dataclasses import dataclass
+import logging
 import re
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional, Union
+
+import numpy as np
+import torch
 from verl import DataProto
 from verl.utils.dataset.rl_dataset import collate_fn
 from transformers import AutoTokenizer
@@ -18,6 +20,8 @@ from tensordict import TensorDict
 
 from dataclasses import asdict
 register_resolvers()
+
+PROMPT_TOKEN_BUFFER = 200
 
 def get_masks_and_scores(input_ids: torch.Tensor, tokenizer: AutoTokenizer, all_scores: List[List[float]] = None, use_turn_scores: bool = False):
     """
@@ -199,6 +203,131 @@ class ContextManager:
         self.prefix_lookup = prefix_lookup
         self.env_config_lookup = env_config_lookup
 
+    def _resolve_max_context_window(self) -> Optional[int]:
+        max_context_window = getattr(self.config.agent_proxy, "max_context_window", -1)
+        if max_context_window is None or max_context_window < 0:
+            return None
+        return int(max_context_window)
+
+    def _extract_history(self, env_output: Dict, prepare_for_update: bool) -> List[Dict]:
+        history = list(env_output["history"])
+        if prepare_for_update and history and "state" in history[-1] and "llm_response" not in history[-1]:
+            return history[:-1]
+        return history
+
+    def _apply_context_window(self, history: List[Dict]) -> tuple[List[Dict], int]:
+        context_window_mode = getattr(self.config.agent_proxy, "context_window_mode", "full")
+        history = list(history)
+        turn_offset = 0
+
+        if context_window_mode == "single_turn":
+            if len(history) > 1:
+                turn_offset = len(history) - 1
+                history = history[-1:]
+            return history, turn_offset
+
+        if context_window_mode == "limited_multi_turn":
+            max_context_window = self._resolve_max_context_window()
+            if max_context_window is not None and max_context_window > 0 and len(history) > max_context_window:
+                turn_offset = len(history) - max_context_window
+                history = history[-max_context_window:]
+        return history, turn_offset
+
+    def _count_tokens(self, text: str) -> int:
+        return len(self.tokenizer(text, add_special_tokens=False)["input_ids"])
+
+    def _apply_max_length(
+        self,
+        messages: List[Dict],
+        add_generation_prompt: bool = False,
+    ) -> List[Dict]:
+        """
+        RAGEN-style prompt truncation.
+
+        Keep the system prompt and trim the oldest complete turns from the left
+        until the rendered prompt fits within `actor_rollout_ref.rollout.max_model_len`.
+        """
+        model_max_length = getattr(self.config.actor_rollout_ref.rollout, "max_model_len", None)
+        if model_max_length is None:
+            return messages
+        max_length = max(1, int(model_max_length) - PROMPT_TOKEN_BUFFER)
+
+        def render_and_count(msgs: List[Dict]) -> int:
+            text = self.tokenizer.apply_chat_template(
+                msgs,
+                add_generation_prompt=add_generation_prompt,
+                tokenize=False,
+            )
+            if add_generation_prompt:
+                if self.config.agent_proxy.enable_think:
+                    text += "<think>"
+                else:
+                    text += "<answer>"
+            return self._count_tokens(text)
+
+        token_len = render_and_count(messages)
+        if token_len <= max_length:
+            return messages
+
+        system_msg = messages[0]
+        conversation = list(messages[1:])
+
+        while token_len > max_length and len(conversation) > 2:
+            if (
+                len(conversation) >= 2
+                and conversation[0]["role"] == "user"
+                and conversation[1]["role"] == "assistant"
+            ):
+                # Each later user message already contains the previous reward
+                # plus the next turn's state. Drop only the oldest user/assistant
+                # pair so the remaining conversation still starts with a user.
+                conversation = conversation[2:]
+            elif conversation[0]["role"] == "user":
+                conversation = conversation[1:]
+            else:
+                # Defensive fallback: real prompts should never start with an
+                # assistant here, but if they do, recover the user-first layout.
+                conversation = conversation[1:]
+
+            token_len = render_and_count([system_msg] + conversation)
+
+        if token_len > max_length:
+            logging.warning(
+                "Prompt still exceeds buffered prompt limit=%s (model max=%s, current=%s).",
+                max_length,
+                model_max_length,
+                token_len,
+            )
+
+        return [system_msg] + conversation
+
+    def _build_messages(
+        self,
+        env_output: Dict,
+        history: List[Dict],
+        turn_offset: int,
+        prepare_for_update: bool,
+    ) -> List[Dict]:
+        messages = [
+            {"role": "system", "content": f"You're a helpful assistant. "},
+            {"role": "user", "content": self.prefix_lookup[env_output["env_id"]]}
+        ]
+
+        for idx, content in enumerate(history):
+            turn_number = content.get("turn_in_attempt", idx + 1 + turn_offset)
+            messages[-1]["content"] += f"\nTurn {turn_number}:\n"
+            if "state" in content:
+                FORMAT_PROMPT = "<think> [Your thoughts] </think> <answer> [your answer] </answer>" if self.config.agent_proxy.enable_think else "<answer> [your answer] </answer>"
+                LENGTH_PROMPT = f"Max response length: {self.env_config_lookup[env_output['env_id']]['max_tokens']} words (tokens)."
+                messages[-1]["content"] += f"State:\n{content['state']}\nYou have {content['actions_left']} actions left. Always output: {FORMAT_PROMPT} with no extra text. Strictly follow this format. {LENGTH_PROMPT}\n"
+            if "llm_response" in content:
+                messages.append({"role": "assistant", "content": content["llm_response"]})
+            if "reward" in content and not (prepare_for_update and idx == len(history) - 1):
+                # when prepare for update, we do not add the reward from the n+1 turn to the trajectory
+                messages.append({"role": "user", "content": f"Reward:\n{content['reward']}\n"})
+
+        return messages
+
     def _parse_response(self, response: str) -> List:
         pattern = r'<think>(.*?)</think>\s*<answer>(.*?)</answer>' if self.config.agent_proxy.enable_think else r'<answer>(.*?)</answer>'
         match = re.search(pattern, response, re.DOTALL)
@@ -291,26 +420,13 @@ class ContextManager:
         """
         llm_input_texts = []
         messages_list = [] # for api calling
+        processed_histories = []
         for env_output in env_outputs:
-            if 'state' in env_output['history'][-1] and prepare_for_update:
-                env_output['history'] = env_output['history'][:-1] # when prepare for update, we do not add the state from the n+1 turn to the trajectory
-            messages = [
-                {"role": "system", "content": f"You're a helpful assistant. "}, 
-                {"role": "user", "content": self.prefix_lookup[env_output["env_id"]]}
-            ]
-
-            for idx, content in enumerate(env_output["history"]):
-                messages[-1]["content"] += f"\nTurn {idx + 1}:\n"
-                if "state" in content:
-                    FORMAT_PROMPT = "<think> [Your thoughts] </think> <answer> [your answer] </answer>" if self.config.agent_proxy.enable_think else "<answer> [your answer] </answer>"
-                    LENGTH_PROMPT = f"Max response length: {self.env_config_lookup[env_output['env_id']]['max_tokens']} words (tokens)."
-                    messages[-1]["content"] += f"State:\n{content['state']}\nYou have {content['actions_left']} actions left. Always output: {FORMAT_PROMPT} with no extra text. Strictly follow this format. {LENGTH_PROMPT}\n"
-                if "llm_response" in content:
-                    messages.append({"role": "assistant", "content": content["llm_response"]})
-                if "reward" in content and not (prepare_for_update and idx == len(env_output["history"]) - 1):
-                    # when prepare for update, we do not add the reward from the n+1 turn to the trajectory
-                    messages.append({"role": "user", "content": f"Reward:\n{content['reward']}\n"})
-
+            history = self._extract_history(env_output, prepare_for_update)
+            history, turn_offset = self._apply_context_window(history)
+            messages = self._build_messages(env_output, history, turn_offset, prepare_for_update)
+            messages = self._apply_max_length(messages, add_generation_prompt=(not prepare_for_update))
+            processed_histories.append(history)
 
             # NOTE: this assertion is important for loss mask computation        
             assert all(msg["role"] == "assistant" for msg in messages[2::2])
@@ -324,11 +440,11 @@ class ContextManager:
             llm_input_texts.append(text)
             messages_list.append(messages)
 
-        inputs = self.tokenizer(llm_input_texts, return_tensors="pt", padding=True, padding_side="left", truncation=False) # do not truncate here. Process later at TODO
+        inputs = self.tokenizer(llm_input_texts, return_tensors="pt", padding=True, padding_side="left", truncation=False)
         input_ids, attention_mask = inputs.input_ids, inputs.attention_mask
         position_ids = attention_mask.cumsum(dim=-1)
         if prepare_for_update:
-            scores = [[i['reward'] for i in env_output['history']] for env_output in env_outputs]
+            scores = [[i['reward'] for i in history] for history in processed_histories]
             loss_mask, score_tensor, response_mask = get_masks_and_scores(input_ids, self.tokenizer, scores, use_turn_scores=self.config.agent_proxy.use_turn_scores)
             if self.config.enable_response_mask:
                 loss_mask = response_mask

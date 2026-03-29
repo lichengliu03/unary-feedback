@@ -1,5 +1,8 @@
+# @package _global_
+
 defaults:
   - /base
+  - _self_
 
 agent_proxy:
   max_turn: 1

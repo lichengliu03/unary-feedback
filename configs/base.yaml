@@ -5,7 +5,8 @@ defaults:
 system:
   CUDA_VISIBLE_DEVICES: "0, 1"
 
-micro_batch_size_per_gpu: 1
+ppo_micro_batch_size_per_gpu: null # default derived from ppo_mini_batch_size / n_gpus if unset
+log_prob_micro_batch_size_per_gpu: null # defaults to PPO micro batch size if unset, but can be set larger
 ppo_mini_batch_size: 8
 model_path: Qwen/Qwen2.5-3B-Instruct
 enable_response_mask: True
@@ -23,8 +24,8 @@ actor_rollout_ref:
     path: ${model_path}
   actor:
     ppo_mini_batch_size: ${ppo_mini_batch_size}  # by default, ppo_mini_batch_size = train_batch_size / 4
-    micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
-    ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu} # keep actor micro batch aligned with PPO updates
+    ppo_micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu}
     use_ref: True
     entropy_coeff: 0.001
     use_kl_loss: False
@@ -43,9 +44,9 @@ actor_rollout_ref:
       target_modules: ${lora.target_modules}
       local_temp_dir: ${lora.local_temp_dir}
   ref:
-    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: ${log_prob_micro_batch_size_per_gpu}
   rollout:
-    log_prob_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+    log_prob_micro_batch_size_per_gpu: ${log_prob_micro_batch_size_per_gpu}
     tensor_model_parallel_size: 2
     max_model_len: 8192
     prompt_length: 1 # useless. Just put it here
@@ -69,7 +70,7 @@ actor_rollout_ref:
 
 critic:
   ppo_mini_batch_size: ${ppo_mini_batch_size} # by default, ppo_mini_batch_size = train_batch_size / 4
-  ppo_micro_batch_size_per_gpu: ${micro_batch_size_per_gpu} # following micro_batch_size_per_gpu
+  ppo_micro_batch_size_per_gpu: ${ppo_micro_batch_size_per_gpu}
   model:
     path: ${model_path}
   optim:
@@ -99,6 +100,12 @@ trainer:
   experiment_name: test
   total_training_steps: 200
   validation_steps: 1 # validation instances = validation_steps * val_env_groups * group_size
+  eval_output_json: null
+  eval_params_json: null
+  eval_log_file: null
+  eval_summary_json: null
+  eval_env_name: null
+  eval_env_tag: null
   val_before_train: True
   n_gpus_per_node: 2
   test_freq: 10
@@ -112,6 +119,8 @@ agent_proxy:
   max_turn: 5
   action_sep: "||"
   max_actions_per_turn: 5 # how many actions can be output at most in a single turn
+  context_window_mode: "full" # full / limited_multi_turn / single_turn
+  max_context_window: -1 # -1 keeps all available history; positive values keep the most recent turns
   use_turn_scores: False # important to GAE when applying token-level rewards to token-level advantages. If False, will take the sum of scores as the reward for the last turn.
   enable_think: True # False -> no think RL
   reward_normalization:

@@ -12,6 +12,11 @@ from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from .base_llm import ConcurrentLLM
 import time
 
+try:
+	from tqdm.auto import tqdm
+except ImportError:
+	tqdm = None
+
 class VllmWrapperWg: # Thi is a developing class for eval and test
 	def __init__(self, config, tokenizer):
 		self.config = config
@@ -144,37 +149,70 @@ class LLMAgentProxy:
 		ctx_manager = self.val_ctx_manager if val else self.train_ctx_manager
 		env_outputs = es_manager.reset(seed=seed)
 		max_turns = self.config.val_agent_proxy.max_turn if val else self.config.agent_proxy.max_turn
+		use_rollout_session = isinstance(self.actor_wg, RayWorkerGroup) and hasattr(self.actor_wg, "start_rollout_session")
+		progress_bar = None
 
 		# Track which turn each environment succeeds in (0-indexed, -1 means never succeeded)
 		num_envs = len(es_manager.envs)
 		success_at_turn = [-1] * num_envs
+		if val and tqdm is not None:
+			validation_step = dataproto.meta_info.get('validation_step')
+			validation_steps = dataproto.meta_info.get('validation_steps')
+			desc = 'eval turns'
+			if validation_step is not None and validation_steps is not None:
+				desc = f'eval {validation_step}/{validation_steps}'
+			progress_bar = tqdm(
+				total=max_turns,
+				desc=desc,
+				unit='turn',
+				dynamic_ncols=True,
+				mininterval=5.0,
+			)
 
-		for i in range(max_turns):
-			lm_inputs: DataProto = ctx_manager.get_lm_inputs(env_outputs, prepare_for_update=False)
-			lm_inputs.meta_info = dataproto.meta_info # TODO: setup vllm early stop when max length is reached. make sure this can be done
-			lm_outputs: DataProto = self.generate_sequences(lm_inputs)
-			env_inputs: List[Dict] = ctx_manager.get_env_inputs(lm_outputs)
-			env_outputs: List[Dict] = es_manager.step(env_inputs)
+		if use_rollout_session:
+			self.actor_wg.start_rollout_session()
 
-			# Track success at this turn (using existing success logic)
-			for env_entry in es_manager.envs:
-				env_id = env_entry['env_id']
-				status = env_entry['status']
-				# Success is defined as: terminated and not truncated
-				if success_at_turn[env_id] == -1 and status.terminated and not status.truncated:
-					success_at_turn[env_id] = i
+		try:
+			for i in range(max_turns):
+				lm_inputs: DataProto = ctx_manager.get_lm_inputs(env_outputs, prepare_for_update=False)
+				lm_inputs.meta_info = dataproto.meta_info # TODO: setup vllm early stop when max length is reached. make sure this can be done
+				lm_outputs: DataProto = self.generate_sequences(lm_inputs)
+				env_inputs: List[Dict] = ctx_manager.get_env_inputs(lm_outputs)
+				env_outputs: List[Dict] = es_manager.step(env_inputs)
 
-			if len(env_outputs) == 0: # all finished
-				break
+				# Track success at this turn (using existing success logic)
+				for env_entry in es_manager.envs:
+					env_id = env_entry['env_id']
+					status = env_entry['status']
+					# Success is defined as: terminated and not truncated
+					if success_at_turn[env_id] == -1 and status.terminated and not status.truncated:
+						success_at_turn[env_id] = i
+
+				if progress_bar is not None:
+					success_count = sum(1 for turn_idx in success_at_turn if turn_idx >= 0)
+					progress_bar.set_postfix(active_envs=len(env_outputs), success=success_count, refresh=False)
+					progress_bar.update(1)
+
+				if len(env_outputs) == 0: # all finished
+					break
+		finally:
+			if progress_bar is not None:
+				progress_bar.close()
+			if use_rollout_session:
+				self.actor_wg.end_rollout_session()
 
 		rollout_states = es_manager.get_rollout_states()
 		rollouts = ctx_manager.formulate_rollouts(rollout_states)
 
 		# Compute pass@k metrics if in validation mode
 		if val:
+			episode_records = es_manager.get_episode_records()
+			for record in episode_records:
+				record['success_at_turn'] = success_at_turn[record['env_id']]
 			pass_at_k_metrics = self._compute_pass_at_k(success_at_turn, max_turns)
 			rollouts.meta_info['pass_at_k'] = pass_at_k_metrics
 			rollouts.meta_info['success_at_turn'] = success_at_turn
+			rollouts.meta_info['episode_records'] = episode_records
 
 		# self.tokenizer.batch_decode(rollouts.batch['input_ids'], skip_special_tokens=False) # see all the trajectories
 		return rollouts

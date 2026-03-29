@@ -11,6 +11,7 @@ import random
 import numpy as np
 
 from ufb.env import REGISTERED_ENVS, REGISTERED_ENV_CONFIGS
+from ufb.env.retry_wrapper import RetryWrapper
 from ufb.utils import register_resolvers
 register_resolvers()
 
@@ -66,7 +67,21 @@ class EnvStateManager:
                 else:
                     env_config = REGISTERED_ENV_CONFIGS[env_class](**cfg_template.env_config)
                 env_obj = REGISTERED_ENVS[env_class](env_config)
-                entry = {'tag': tag, 'group_id': env_id // self.group_size, 'env_id': env_id, 
+                # Wrap with multi-turn retry if configured
+                retry_cfg = getattr(cfg_template, 'retry', None)
+                if retry_cfg is not None:
+                    from ufb.env.wrappers.multi_turn_retry import MultiTurnRetryWrapper
+                    env_obj = MultiTurnRetryWrapper(
+                        inner_env=env_obj,
+                        max_turns_per_attempt=retry_cfg.max_turns_per_attempt,
+                        max_actions_per_attempt=retry_cfg.max_actions_per_attempt,
+                        max_retry_attempts=retry_cfg.max_retry_attempts,
+                        randomize_feedback=retry_cfg.get('randomize_feedback', True),
+                        retry_feedback_pool=list(retry_cfg.get('feedback_pool', [])) or None,
+                        fixed_feedback=retry_cfg.get('fixed_feedback', None),
+                        reward_decay_base=retry_cfg.get('reward_decay_base', 2.0),
+                    )
+                entry = {'tag': tag, 'group_id': env_id // self.group_size, 'env_id': env_id,
                         'env': env_obj, 'config': env_config, 'status': EnvStatus(), 'max_actions_per_traj': max_actions_per_traj}
                 env_list.append(entry)
             done_groups += n_group
@@ -98,6 +113,8 @@ class EnvStateManager:
         for cache, env in zip(rollout_cache, envs):
             next_state = self._handle_mm_state(env['env'].render())
             cache['history'] = self._update_cache_history(cache['history'], next_state=next_state, actions_left=env['max_actions_per_traj'], num_actions_info=None)
+            cache['history'][-1]['attempt_num'] = getattr(env['env'], 'attempt_num', 0)
+            cache['history'][-1]['turn_in_attempt'] = 1
 
         self.rollout_cache = rollout_cache
         return rollout_cache
@@ -131,13 +148,20 @@ class EnvStateManager:
             status.num_actions += len(executed_actions)
             status.rewards.append(acc_reward) # NOTE use turn-wise acc_reward
             actions_left = max_actions_per_traj - status.num_actions
-            if turn_done:
-                status.terminated = True # TODO check terminated definition in gymnasium
+            # RetryWrapper sets info["retry"]=True when the inner env failed
+            # but has attempts remaining. In that case, done=True (to break
+            # the action loop) but we must NOT mark the env as terminated,
+            # so it continues to the next LLM turn with the fresh puzzle.
+            if turn_done and not turn_info.get('retry', False):
+                status.terminated = True
                 status.truncated = not turn_info.get('success', False)
             history = self._update_cache_history(history, next_state=obs, actions_left=actions_left, num_actions_info={
                 'actions': executed_actions, 'reward': acc_reward, 'info': turn_info,
                 'llm_response': env_input['llm_response'], 'llm_raw_response': env_input['llm_raw_response']
             })
+            prev_entry = history[-2]
+            history[-1]['attempt_num'] = prev_entry.get('attempt_num', 0)
+            history[-1]['turn_in_attempt'] = prev_entry.get('turn_in_attempt', 1) + 1
             # filter out invalid actions
             # history = [content for content in history[:-1] if content['actions']] + [history[-1]]
             return status, history
@@ -159,12 +183,47 @@ class EnvStateManager:
 
             status, history = _log_env_state(entry['status'], self.rollout_cache[env_id]['history'], entry['env'].render(), entry['max_actions_per_traj'], executed_actions, valid_actions, acc_reward, turn_done, turn_info, env_input)
             entry['status'] = status
+            is_retry = turn_info.get('retry', False)
+            # If retry was triggered mid-turn (e.g. env failure), reset action counter
+            if is_retry:
+                entry['status'].num_actions = 0
+                history[-1]['actions_left'] = entry['max_actions_per_traj']
+                history[-1]['attempt_num'] = turn_info.get('attempt_num', history[-2].get('attempt_num', 0) + 1)
+                history[-1]['turn_in_attempt'] = 1
             if entry['status'].num_actions >= entry['max_actions_per_traj'] and not turn_done:
                 entry['status'].truncated = True
                 entry['status'].terminated = True
                 turn_done = True
+            # Notify retry wrapper of turn boundary (if wrapped)
+            if not turn_done and not is_retry and hasattr(env, 'notify_turn_end'):
+                retry_result = env.notify_turn_end()
+                if retry_result is not None:
+                    retry_obs, retry_reward, retry_done, retry_info = retry_result
+                    if retry_done:
+                        entry['status'].terminated = True
+                        entry['status'].truncated = not retry_info.get('success', False)
+                        turn_done = True
+                    else:
+                        # Retry: reset action counter so actions_left recalculates
+                        entry['status'].num_actions = 0
+                    # Replace the pending state entry with retry feedback + reset grid
+                    # (don't append — that would create an entry without 'reward')
+                    history[-1]['state'] = self._handle_mm_state(env.render())
+                    history[-1]['actions_left'] = entry['max_actions_per_traj'] - entry['status'].num_actions
+                    history[-1]['attempt_num'] = retry_info.get('attempt_num', history[-2].get('attempt_num', 0) + 1)
+                    history[-1]['turn_in_attempt'] = 1
+                    if len(history) >= 2:
+                        history[-2].setdefault('info', {}).update(retry_info)
             self.rollout_cache[env_id]['history'] = history
-            if not turn_done: # NOTE done environments are not sent for further llm generation (for efficiency)
+            # Handle retry: the wrapper already reset the inner env to the
+            # same puzzle. We reset the action counter so the new attempt
+            # gets a full action budget, and keep the env in env_outputs
+            # so it goes to the next LLM generation turn.
+            # Note: each retry attempt consumes LLM turns from
+            # agent_proxy.max_turn — see RetryWrapper docstring.
+            if is_retry:
+                entry['status'].num_actions = 0
+            if not turn_done or is_retry:
                 env_outputs.append(self.rollout_cache[env_id])
 
         return env_outputs
@@ -202,6 +261,107 @@ class EnvStateManager:
             env_metric = {f"{entry['tag']}/{k}": v for k, v in env_metric.items()}
             cache['metrics'] = env_metric
         return rollout_cache
+
+    def _serialize_value(self, value):
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, PIL.Image.Image):
+            return {
+                "type": "image",
+                "mode": value.mode,
+                "size": list(value.size),
+            }
+        if isinstance(value, dict):
+            return {str(k): self._serialize_value(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._serialize_value(v) for v in value]
+        return value
+
+    def _unwrap_env(self, env):
+        cur_env = env
+        seen_ids = set()
+        while hasattr(cur_env, "inner_env") and id(cur_env) not in seen_ids:
+            seen_ids.add(id(cur_env))
+            cur_env = cur_env.inner_env
+        return cur_env
+
+    def _extract_episode_metadata(self, env):
+        base_env = self._unwrap_env(env)
+        if hasattr(base_env, "get_episode_metadata"):
+            metadata = base_env.get_episode_metadata()
+            if isinstance(metadata, dict):
+                return self._serialize_value(metadata)
+
+        metadata = {}
+        attr_map = {
+            "current_question_idx": "question_idx",
+            "current_question": "question",
+            "correct_answer": "correct_answer",
+            "attempt_num": "attempt_num",
+            "turns_in_attempt": "turns_in_attempt",
+            "actions_in_attempt": "actions_in_attempt",
+            "initial_seed": "initial_seed",
+        }
+        for attr_name, field_name in attr_map.items():
+            if hasattr(base_env, attr_name):
+                metadata[field_name] = getattr(base_env, attr_name)
+        return self._serialize_value(metadata)
+
+    def _history_to_turns(self, history: List[Dict]):
+        turns = []
+        for idx in range(max(len(history) - 1, 0)):
+            current_entry = history[idx]
+            next_entry = history[idx + 1]
+            turns.append({
+                "turn_index": idx + 1,
+                "attempt_num": current_entry.get("attempt_num"),
+                "turn_in_attempt": current_entry.get("turn_in_attempt"),
+                "observation": self._serialize_value(current_entry.get("state")),
+                "actions_left_before": current_entry.get("actions_left"),
+                "assistant_response": current_entry.get("llm_response"),
+                "assistant_raw_response": current_entry.get("llm_raw_response"),
+                "actions": self._serialize_value(current_entry.get("actions", [])),
+                "reward": self._serialize_value(current_entry.get("reward")),
+                "info": self._serialize_value(current_entry.get("info", {})),
+                "next_observation": self._serialize_value(next_entry.get("state")),
+                "actions_left_after": next_entry.get("actions_left"),
+                "next_attempt_num": next_entry.get("attempt_num"),
+                "next_turn_in_attempt": next_entry.get("turn_in_attempt"),
+            })
+        return turns
+
+    def get_episode_records(self):
+        if self.rollout_cache is None:
+            return []
+
+        episode_records = []
+        for entry, cache in zip(self.envs, self.rollout_cache):
+            status = entry["status"]
+            history = cache.get("history", [])
+            final_turn = history[-2] if len(history) >= 2 else {}
+            episode_records.append({
+                "env_id": entry["env_id"],
+                "group_id": entry["group_id"],
+                "tag": entry["tag"],
+                "seed": status.seed,
+                "success": bool(status.terminated and not status.truncated),
+                "terminated": bool(status.terminated),
+                "truncated": bool(status.truncated),
+                "num_actions": status.num_actions,
+                "turns_taken": len(history) - 1,
+                "penalty": self._serialize_value(cache.get("penalty", 0.0)),
+                "rewards": self._serialize_value(status.rewards),
+                "episode_metadata": self._extract_episode_metadata(entry["env"]),
+                "metrics": self._serialize_value(cache.get("metrics", {})),
+                "custom_metrics": self._serialize_value(history[-1].get("metrics", {}) if history else {}),
+                "final_info": self._serialize_value(final_turn.get("info", {})),
+                "initial_observation": self._serialize_value(history[0].get("state") if history else None),
+                "final_observation": self._serialize_value(history[-1].get("state") if history else None),
+                "turns": self._history_to_turns(history),
+            })
+        return episode_records
 
 
 
