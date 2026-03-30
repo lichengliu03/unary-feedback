@@ -42,6 +42,7 @@ MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-3B-Instruct}"
 STEPS="${STEPS:-200}"
 NGPUS="${NGPUS:-2}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
+RESPONSE_LENGTH="${RESPONSE_LENGTH:-512}"
 EXPERIMENT="${EXPERIMENT:-exp1_${ENV_TAG}}"
 CKPT_DIR="${CKPT_DIR:-${PROJECT_DIR}/outputs/checkpoints/${EXPERIMENT}}"
 LOG_FILE="${PROJECT_DIR}/outputs/logs/exp1_${ENV_TAG}.log"
@@ -70,6 +71,7 @@ echo "[INFO] GPUs:        ${NGPUS} (${CUDA_DEVICES})"
 echo "[INFO] Model:       ${MODEL_PATH}"
 echo "[INFO] Steps:       ${STEPS}"
 echo "[INFO] Max turn:    ${MAX_TURN}"
+echo "[INFO] Resp len:    ${RESPONSE_LENGTH}"
 echo "[INFO] Checkpoint:  ${CKPT_DIR}"
 echo "[INFO] Log file:    ${LOG_FILE}"
 echo "[INFO] ============================================"
@@ -87,12 +89,13 @@ python train.py \
   trainer.experiment_name="${EXPERIMENT}" \
   trainer.default_local_dir="${CKPT_DIR}" \
   model_path="${MODEL_PATH}" \
-  ppo_micro_batch_size_per_gpu=8 \
-  log_prob_micro_batch_size_per_gpu=16 \
-  ppo_mini_batch_size=32 \
+  ppo_micro_batch_size_per_gpu=2 \
+  log_prob_micro_batch_size_per_gpu=8 \
+  ppo_mini_batch_size=8 \
   actor_rollout_ref.actor.entropy_coeff=0 \
   agent_proxy.max_turn="${MAX_TURN}" \
   val_agent_proxy.max_turn="${MAX_TURN}" \
+  actor_rollout_ref.rollout.response_length="${RESPONSE_LENGTH}" \
   actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
   actor_rollout_ref.rollout.gpu_memory_utilization=0.3 \
   actor_rollout_ref.rollout.max_model_len=8192 \
