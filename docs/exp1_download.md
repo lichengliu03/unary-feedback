@@ -25,14 +25,35 @@ python scripts/utils/download_exp1_models.py
 
 ## Default Model Set
 
-By default, the downloader fetches the full released Exp1 set:
+By default, the downloader fetches the full released Exp1 set.
+
+### Direct HF models (per-step checkpoints)
+
+Keys follow the pattern `<task>_<step>` for steps 50, 100, 150, 200:
+
+| Model Key | HF Repo | Local Output |
+|---|---|---|
+| `metamathqa_50` | `ZihanWang314/exp1_MetamathQA_global_step_50` | `loaded_checkpoints/exp1/metamathqa_50/` |
+| `metamathqa_100` | `ZihanWang314/exp1_MetamathQA_global_step_100` | `loaded_checkpoints/exp1/metamathqa_100/` |
+| `metamathqa_150` | `ZihanWang314/exp1_MetamathQA_global_step_150` | `loaded_checkpoints/exp1/metamathqa_150/` |
+| `metamathqa_200` | `ZihanWang314/exp1_MetamathQA_global_step_200` | `loaded_checkpoints/exp1/metamathqa_200/` |
+| `countdown_50` | `ZihanWang314/exp1_Countdown_global_step_50` | `loaded_checkpoints/exp1/countdown_50/` |
+| `countdown_100` | `ZihanWang314/exp1_Countdown_global_step_100` | `loaded_checkpoints/exp1/countdown_100/` |
+| `countdown_150` | `ZihanWang314/exp1_Countdown_global_step_150` | `loaded_checkpoints/exp1/countdown_150/` |
+| `countdown_200` | `ZihanWang314/exp1_Countdown_global_step_200` | `loaded_checkpoints/exp1/countdown_200/` |
+| `simplesokoban_50` | `ZihanWang314/exp1_SimpleSokoban_global_step_50` | `loaded_checkpoints/exp1/simplesokoban_50/` |
+| `simplesokoban_100` | `ZihanWang314/exp1_SimpleSokoban_global_step_100` | `loaded_checkpoints/exp1/simplesokoban_100/` |
+| `simplesokoban_150` | `ZihanWang314/exp1_SimpleSokoban_global_step_150` | `loaded_checkpoints/exp1/simplesokoban_150/` |
+| `simplesokoban_200` | `ZihanWang314/exp1_SimpleSokoban_global_step_200` | `loaded_checkpoints/exp1/simplesokoban_200/` |
+| `frozenlake_50` | `ZihanWang314/exp1_Frozenlake_global_step_50` | `loaded_checkpoints/exp1/frozenlake_50/` |
+| `frozenlake_100` | `ZihanWang314/exp1_Frozenlake_global_step_100` | `loaded_checkpoints/exp1/frozenlake_100/` |
+| `frozenlake_150` | `ZihanWang314/exp1_Frozenlake_global_step_150` | `loaded_checkpoints/exp1/frozenlake_150/` |
+| `frozenlake_200` | `ZihanWang314/exp1_Frozenlake_global_step_200` | `loaded_checkpoints/exp1/frozenlake_200/` |
+
+### Checkpoint-backed models (convert from raw)
 
 | Model Key | Source Type | Local Output |
 |---|---|---|
-| `metamathqa` | direct HF model | `loaded_checkpoints/exp1/metamathqa/` |
-| `countdown` | direct HF model | `loaded_checkpoints/exp1/countdown/` |
-| `simplesokoban` | direct HF model | `loaded_checkpoints/exp1/simplesokoban/` |
-| `frozenlake` | direct HF model | `loaded_checkpoints/exp1/frozenlake/` |
 | `hotpotqa` | raw checkpoint download + convert | `loaded_checkpoints/exp1/hotpotqa/` |
 | `webshop` | raw checkpoint download + convert | `loaded_checkpoints/exp1/webshop/` |
 
@@ -49,10 +70,10 @@ Download the whole set:
 bash scripts/download_exp1_models.sh
 ```
 
-Download only selected models:
+Download only selected models (use `<task>_<step>` keys):
 
 ```bash
-python scripts/utils/download_exp1_models.py --models metamathqa countdown
+python scripts/utils/download_exp1_models.py --models metamathqa_50 metamathqa_200 countdown_100
 ```
 
 Download raw checkpoint-backed artifacts without converting:
@@ -85,12 +106,24 @@ A typical local layout looks like:
 
 ```text
 loaded_checkpoints/exp1/
-├── countdown/
-├── frozenlake/
+├── countdown_50/
+├── countdown_100/
+├── countdown_150/
+├── countdown_200/
+├── frozenlake_50/
+├── frozenlake_100/
+├── frozenlake_150/
+├── frozenlake_200/
 ├── hotpotqa/
 ├── hotpotqa_raw/
-├── metamathqa/
-├── simplesokoban/
+├── metamathqa_50/
+├── metamathqa_100/
+├── metamathqa_150/
+├── metamathqa_200/
+├── simplesokoban_50/
+├── simplesokoban_100/
+├── simplesokoban_150/
+├── simplesokoban_200/
 ├── webshop/
 └── webshop_raw/
 ```

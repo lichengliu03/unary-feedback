@@ -53,3 +53,6 @@ logs/
 
 # loaded checkpoints
 loaded_checkpoints/
+
+# temporary files
+eval_results/

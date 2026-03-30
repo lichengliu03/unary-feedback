@@ -9,13 +9,21 @@ from pathlib import Path
 
 from huggingface_hub import HfApi, snapshot_download
 
-from convert_fsdp_to_hf import convert_fsdp_to_hf
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXP1_ROOT = REPO_ROOT / "loaded_checkpoints" / "exp1"
 
-MODEL_SPECS = {
+# Direct models with per-step checkpoints.
+# key: (HF repo name prefix, local dir prefix)
+_DIRECT_MODEL_VARIANTS = {
+    "metamathqa": "MetamathQA",
+    "countdown": "Countdown",
+    "simplesokoban": "SimpleSokoban",
+    "frozenlake": "Frozenlake",
+}
+_DIRECT_MODEL_STEPS = [50, 100, 150, 200]
+
+MODEL_SPECS: dict = {
     "hotpotqa": {
         "kind": "checkpoint",
         "repo_id": "zihanwang314/unary-feedback-checkpoints",
@@ -34,31 +42,28 @@ MODEL_SPECS = {
         "base_model": "Qwen/Qwen2.5-3B-Instruct",
         "output_dir": EXP1_ROOT / "webshop",
     },
-    "metamathqa": {
-        "kind": "direct",
-        "repo_id": "ZihanWang314/exp1_MetamathQA_global_step_200",
-        "repo_type": "model",
-        "local_dir": EXP1_ROOT / "metamathqa",
-    },
-    "countdown": {
-        "kind": "direct",
-        "repo_id": "ZihanWang314/exp1_Countdown_global_step_200",
-        "repo_type": "model",
-        "local_dir": EXP1_ROOT / "countdown",
-    },
-    "simplesokoban": {
-        "kind": "direct",
-        "repo_id": "ZihanWang314/exp1_SimpleSokoban_global_step_200",
-        "repo_type": "model",
-        "local_dir": EXP1_ROOT / "simplesokoban",
-    },
-    "frozenlake": {
-        "kind": "direct",
-        "repo_id": "ZihanWang314/exp1_Frozenlake_global_step_200",
-        "repo_type": "model",
-        "local_dir": EXP1_ROOT / "frozenlake",
-    },
 }
+
+# Generate one entry per (model, step) combination.
+for _base_key, _hf_name in _DIRECT_MODEL_VARIANTS.items():
+    for _step in _DIRECT_MODEL_STEPS:
+        _key = f"{_base_key}_{_step}"
+        MODEL_SPECS[_key] = {
+            "kind": "direct",
+            "repo_id": f"ZihanWang314/exp1_{_hf_name}_global_step_{_step}",
+            "repo_type": "model",
+            "local_dir": EXP1_ROOT / _key,
+        }
+
+# MetaMathQA no-feedback models (Qwen2.5-3B, steps 50/100/150/200).
+for _step in [50, 100, 150, 200]:
+    _key = f"metamathqa_no_feedback_{_step}"
+    MODEL_SPECS[_key] = {
+        "kind": "direct",
+        "repo_id": f"LichengLiu03/Qwen2.5-3B-5turn-no-feedback-step{_step}",
+        "repo_type": "model",
+        "local_dir": EXP1_ROOT / _key,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -144,6 +149,8 @@ def convert_latest_checkpoint(name: str, spec: dict, raw_dir: Path) -> Path:
     actor_dir = find_latest_actor_dir(raw_dir)
     output_dir = Path(spec["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    from convert_fsdp_to_hf import convert_fsdp_to_hf  # requires torch; imported lazily
 
     print(f"[CONVERT] {name}: {actor_dir} -> {output_dir}")
     success = convert_fsdp_to_hf(
