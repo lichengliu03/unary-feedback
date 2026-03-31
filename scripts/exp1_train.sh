@@ -12,6 +12,8 @@
 #   NGPUS=1 bash scripts/exp1_train.sh                          # 1 GPU
 #   ENV_TAG=SimpleSokoban NGPUS=1 bash scripts/exp1_train.sh
 #   ENV_TAG=FrozenLake NGPUS=2 bash scripts/exp1_train.sh
+#   RETRY_MODE=no_retry bash scripts/exp1_train.sh              # disable retry
+#   ENV_TAG=FrozenLake RETRY_MODE=no_retry bash scripts/exp1_train.sh
 #
 # Available ENV_TAGs (from configs/envs.yaml):
 #   MetamathQA, Countdown, SimpleSokoban, FrozenLake, Bandit,
@@ -38,39 +40,89 @@ export HF_TOKEN="${HF_TOKEN:-}"
 
 # ---- configurable ----
 ENV_TAG="${ENV_TAG:-MetamathQA}"
+RETRY_MODE="${RETRY_MODE:-retry}"   # retry | no_retry
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-3B-Instruct}"
 STEPS="${STEPS:-200}"
 NGPUS="${NGPUS:-2}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
 RESPONSE_LENGTH="${RESPONSE_LENGTH:-512}"
-EXPERIMENT="${EXPERIMENT:-exp1_${ENV_TAG}}"
+MAX_TURNS_PER_ATTEMPT="${MAX_TURNS_PER_ATTEMPT:-5}"
+MAX_ACTIONS_PER_ATTEMPT="${MAX_ACTIONS_PER_ATTEMPT:-10}"
+
+case "${RETRY_MODE}" in
+  retry|no_retry)
+    ;;
+  *)
+    echo "[ERROR] Unsupported RETRY_MODE: ${RETRY_MODE}" >&2
+    echo "[ERROR] Expected one of: retry, no_retry" >&2
+    exit 1
+    ;;
+esac
+
+ENV_USES_RETRY_WRAPPER=false
+case "${ENV_TAG}" in
+  SimpleSokoban|LargerSokoban|FrozenLake)
+    ENV_USES_RETRY_WRAPPER=true
+    ;;
+esac
+
+# Retry semantics:
+#   - MetamathQA / Countdown: each turn is one attempt
+#   - Sokoban / FrozenLake: attempts come from MultiTurnRetryWrapper
+if [ "${ENV_USES_RETRY_WRAPPER}" = "true" ]; then
+  if [ "${RETRY_MODE}" = "no_retry" ]; then
+    DEFAULT_MAX_RETRY_ATTEMPTS=1
+  else
+    DEFAULT_MAX_RETRY_ATTEMPTS=3
+  fi
+  MAX_RETRY_ATTEMPTS="${MAX_RETRY_ATTEMPTS:-${DEFAULT_MAX_RETRY_ATTEMPTS}}"
+  DEFAULT_MAX_TURN="$((MAX_RETRY_ATTEMPTS * MAX_TURNS_PER_ATTEMPT))"
+else
+  if [ "${RETRY_MODE}" = "no_retry" ]; then
+    DEFAULT_MAX_TURN=1
+  else
+    DEFAULT_MAX_TURN=5
+  fi
+fi
+
+MAX_TURN="${MAX_TURN:-${DEFAULT_MAX_TURN}}"
+
+DEFAULT_EXPERIMENT="exp1_${ENV_TAG}"
+if [ "${RETRY_MODE}" = "no_retry" ]; then
+  DEFAULT_EXPERIMENT="${DEFAULT_EXPERIMENT}_no_retry"
+fi
+EXPERIMENT="${EXPERIMENT:-${DEFAULT_EXPERIMENT}}"
 CKPT_DIR="${CKPT_DIR:-${PROJECT_DIR}/outputs/checkpoints/${EXPERIMENT}}"
-LOG_FILE="${PROJECT_DIR}/outputs/logs/exp1_${ENV_TAG}.log"
+LOG_FILE="${LOG_FILE:-${PROJECT_DIR}/outputs/logs/${EXPERIMENT}.log}"
 
 # Build CUDA device list: "0" for 1 GPU, "0,1" for 2 GPUs
 CUDA_DEVICES=$(seq -s, 0 $((NGPUS - 1)))
 
-# Set max_turn based on environment type:
-#   Single-turn (MetamathQA, Countdown): max_turn = max retries (5)
-#   Multi-turn (SimpleSokoban, FrozenLake): max_turn = turns_per_attempt * retries (15)
-case "${ENV_TAG}" in
-  SimpleSokoban|LargerSokoban|FrozenLake)
-    MAX_TURN="${MAX_TURN:-15}"
-    ;;
-  *)
-    MAX_TURN="${MAX_TURN:-5}"
-    ;;
-esac
+RETRY_OVERRIDES=()
+if [ "${ENV_USES_RETRY_WRAPPER}" = "true" ]; then
+  RETRY_OVERRIDES+=("custom_envs.${ENV_TAG}.max_actions_per_traj=${MAX_ACTIONS_PER_ATTEMPT}")
+  RETRY_OVERRIDES+=("custom_envs.${ENV_TAG}.retry.max_turns_per_attempt=${MAX_TURNS_PER_ATTEMPT}")
+  RETRY_OVERRIDES+=("custom_envs.${ENV_TAG}.retry.max_actions_per_attempt=${MAX_ACTIONS_PER_ATTEMPT}")
+  RETRY_OVERRIDES+=("custom_envs.${ENV_TAG}.retry.max_retry_attempts=${MAX_RETRY_ATTEMPTS}")
+fi
 
 mkdir -p "${CKPT_DIR}"
 
 echo "[INFO] ============================================"
 echo "[INFO] Training"
 echo "[INFO] Env tag:     ${ENV_TAG}"
+echo "[INFO] Retry mode:  ${RETRY_MODE}"
 echo "[INFO] GPUs:        ${NGPUS} (${CUDA_DEVICES})"
 echo "[INFO] Model:       ${MODEL_PATH}"
 echo "[INFO] Steps:       ${STEPS}"
 echo "[INFO] Max turn:    ${MAX_TURN}"
+if [ "${ENV_USES_RETRY_WRAPPER}" = "true" ]; then
+  echo "[INFO] Attempts:    ${MAX_RETRY_ATTEMPTS}"
+  echo "[INFO] Turns/att:   ${MAX_TURNS_PER_ATTEMPT}"
+  echo "[INFO] Acts/att:    ${MAX_ACTIONS_PER_ATTEMPT}"
+else
+  echo "[INFO] Attempts:    ${MAX_TURN} (1 turn/attempt)"
+fi
 echo "[INFO] Resp len:    ${RESPONSE_LENGTH}"
 echo "[INFO] Checkpoint:  ${CKPT_DIR}"
 echo "[INFO] Log file:    ${LOG_FILE}"
@@ -108,6 +160,7 @@ python train.py \
   es_manager.val.group_size=1 \
   "es_manager.val.env_configs.tags=[${ENV_TAG}]" \
   "es_manager.val.env_configs.n_groups=[512]" \
+  "${RETRY_OVERRIDES[@]}" \
   +trainer.max_actor_ckpt_to_keep=4 \
   +trainer.max_critic_ckpt_to_keep=0 \
   "+actor_rollout_ref.actor.checkpoint.contents=[model,optimizer,extra,hf_config]" \
