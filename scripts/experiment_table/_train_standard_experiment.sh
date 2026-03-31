@@ -54,6 +54,8 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-16384}"
 CONTEXT_WINDOW_MODE="${CONTEXT_WINDOW_MODE:-full}"
 MAX_CONTEXT_WINDOW="${MAX_CONTEXT_WINDOW:--1}"
+ADV_ESTIMATOR="${ADV_ESTIMATOR:-gae}"
+GRPO_ADVANTAGE_LENGTH_WEIGHT="${GRPO_ADVANTAGE_LENGTH_WEIGHT:-False}"
 MAX_RETRY_ATTEMPTS="${MAX_RETRY_ATTEMPTS:-${ATTEMPT_TIMES}}"
 MAX_TURNS_PER_ATTEMPT="${MAX_TURNS_PER_ATTEMPT:-${TURN_PER_ATTEMPT}}"
 MAX_ACTIONS_PER_ATTEMPT="${MAX_ACTIONS_PER_ATTEMPT:-${MAX_TURNS_PER_ATTEMPT}}"
@@ -99,6 +101,10 @@ echo "[INFO] Train grp:   ${TRAIN_ENV_GROUPS} x ${TRAIN_GROUP_SIZE}"
 echo "[INFO] Val grp:     ${VAL_ENV_GROUPS} x ${VAL_GROUP_SIZE}"
 echo "[INFO] Ctx mode:    ${CONTEXT_WINDOW_MODE}"
 echo "[INFO] Ctx window:  ${MAX_CONTEXT_WINDOW}"
+echo "[INFO] Adv est:     ${ADV_ESTIMATOR}"
+if [ "${ADV_ESTIMATOR}" = "grpo" ]; then
+  echo "[INFO] GRPO len wt: ${GRPO_ADVANTAGE_LENGTH_WEIGHT}"
+fi
 echo "[INFO] Retry wrap:  ${ENABLE_RETRY_WRAPPER}"
 if [ "${ENABLE_RETRY_WRAPPER}" = "true" ]; then
   echo "[INFO] Retry turns: ${MAX_TURNS_PER_ATTEMPT}"
@@ -123,6 +129,8 @@ python train.py \
   trainer.experiment_name="${EXPERIMENT}" \
   trainer.default_local_dir="${CKPT_DIR}" \
   model_path="${MODEL_PATH}" \
+  algorithm.adv_estimator="${ADV_ESTIMATOR}" \
+  grpo_advantage_length_weight="${GRPO_ADVANTAGE_LENGTH_WEIGHT}" \
   ppo_micro_batch_size_per_gpu="${PPO_MICRO_BATCH_SIZE_PER_GPU}" \
   log_prob_micro_batch_size_per_gpu="${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}" \
   ppo_mini_batch_size="${PPO_MINI_BATCH_SIZE}" \

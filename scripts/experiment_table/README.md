@@ -15,6 +15,7 @@ Current files:
 - `metamathqa_qwen25_1p5b_one_bit.sh`
 - `metamathqa_qwen25_7b_one_bit.sh`
 - `metamathqa_llama32_3b_one_bit.sh`
+- `metamathqa_llama32_3b_single_turn_grpo.sh`
 - `metamathqa_gemma3_4b_one_bit.sh`
 - `metamathqa_phi4_mini_one_bit.sh`
 - `metamathqa_llama32_3b_no_feedback.sh`
